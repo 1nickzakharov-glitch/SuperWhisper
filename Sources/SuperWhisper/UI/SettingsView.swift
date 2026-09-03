@@ -2,6 +2,53 @@ import SwiftUI
 import Carbon
 import AVFoundation
 
+public enum KeycodeMapper {
+    public static func latinName(for keyCode: UInt32) -> String {
+        switch Int(keyCode) {
+        case kVK_ANSI_A: return "A"
+        case kVK_ANSI_B: return "B"
+        case kVK_ANSI_C: return "C"
+        case kVK_ANSI_D: return "D"
+        case kVK_ANSI_E: return "E"
+        case kVK_ANSI_F: return "F"
+        case kVK_ANSI_G: return "G"
+        case kVK_ANSI_H: return "H"
+        case kVK_ANSI_I: return "I"
+        case kVK_ANSI_J: return "J"
+        case kVK_ANSI_K: return "K"
+        case kVK_ANSI_L: return "L"
+        case kVK_ANSI_M: return "M"
+        case kVK_ANSI_N: return "N"
+        case kVK_ANSI_O: return "O"
+        case kVK_ANSI_P: return "P"
+        case kVK_ANSI_Q: return "Q"
+        case kVK_ANSI_R: return "R"
+        case kVK_ANSI_S: return "S"
+        case kVK_ANSI_T: return "T"
+        case kVK_ANSI_U: return "U"
+        case kVK_ANSI_V: return "V"
+        case kVK_ANSI_W: return "W"
+        case kVK_ANSI_X: return "X"
+        case kVK_ANSI_Y: return "Y"
+        case kVK_ANSI_Z: return "Z"
+        case kVK_ANSI_0: return "0"
+        case kVK_ANSI_1: return "1"
+        case kVK_ANSI_2: return "2"
+        case kVK_ANSI_3: return "3"
+        case kVK_ANSI_4: return "4"
+        case kVK_ANSI_5: return "5"
+        case kVK_ANSI_6: return "6"
+        case kVK_ANSI_7: return "7"
+        case kVK_ANSI_8: return "8"
+        case kVK_ANSI_9: return "9"
+        case kVK_Space: return "Space"
+        case kVK_Return: return "Return"
+        case kVK_Tab: return "Tab"
+        default: return "Key\(keyCode)"
+        }
+    }
+}
+
 public struct SettingsView: View {
     @ObservedObject var preferences = Preferences.shared
     @ObservedObject var appState = AppState.shared
@@ -53,7 +100,6 @@ public struct SettingsView: View {
                         .font(.system(size: 13, weight: .medium))
                     
                     HStack(spacing: 12) {
-                        // Current Shortcut Display
                         HStack(spacing: 6) {
                             Image(systemName: "keyboard")
                                 .foregroundColor(.cyan)
@@ -78,7 +124,6 @@ public struct SettingsView: View {
                         .tint(isRecordingShortcut ? .red : .accentColor)
                     }
                     
-                    // Quick presets
                     HStack(spacing: 8) {
                         Text("Быстрые пресеты:")
                             .font(.caption)
@@ -147,12 +192,11 @@ public struct SettingsView: View {
                         Text("Тест микрофона (говорите прямо сейчас):")
                             .font(.subheadline)
                         Spacer()
-                        Text(appState.audioCapture.isMonitoring ? "🟢 Слушаю" : "⚪ Ожидание")
+                        Text(appState.audioCapture.isMonitoring ? "🟢 Слушаю" : "⚪ Ожидание разрешения")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
-                    // Live Audio Equalizer & RMS Bar
                     VStack(spacing: 8) {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
@@ -173,12 +217,11 @@ public struct SettingsView: View {
                         }
                         .frame(height: 16)
                         
-                        // Mini 7-band live frequency visualizer
                         HStack(spacing: 6) {
                             ForEach(0..<appState.audioCapture.audioLevels.count, id: \.self) { i in
                                 let h = max(4, CGFloat(appState.audioCapture.audioLevels[i]) * 24)
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.cyan.opacity(0.8))
+                                    .fill(Color.cyan.opacity(0.85))
                                     .frame(width: 8, height: h)
                                     .animation(.spring(response: 0.1, dampingFraction: 0.5), value: h)
                             }
@@ -190,7 +233,7 @@ public struct SettingsView: View {
                         .frame(height: 24)
                     }
                     
-                    Text("Если столбики прыгают при вашем голосе — микрофон захватывает звук чисто.")
+                    Text("Столбики и шкала реагируют на громкость в реальном времени.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -203,9 +246,24 @@ public struct SettingsView: View {
                 HStack {
                     Text("Доступ к микрофону:")
                     Spacer()
-                    Text("🟢 Разрешён")
-                        .foregroundColor(.green)
-                        .font(.system(size: 12, weight: .semibold))
+                    let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                    if micStatus == .authorized {
+                        Text("🟢 Разрешён")
+                            .foregroundColor(.green)
+                            .font(.system(size: 12, weight: .semibold))
+                    } else {
+                        Button("Запросить доступ") {
+                            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                                DispatchQueue.main.async {
+                                    if granted {
+                                        self.appState.audioCapture.startMonitoring()
+                                    }
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
                 }
                 
                 HStack {
@@ -238,7 +296,18 @@ public struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            appState.audioCapture.startMonitoring()
+            let status = AVCaptureDevice.authorizationStatus(for: .audio)
+            if status == .authorized {
+                appState.audioCapture.startMonitoring()
+            } else if status == .notDetermined {
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    DispatchQueue.main.async {
+                        if granted {
+                            self.appState.audioCapture.startMonitoring()
+                        }
+                    }
+                }
+            }
             appState.refreshPermissions()
         }
         .onDisappear {
@@ -280,7 +349,6 @@ public struct SettingsView: View {
             .background(Color.secondary.opacity(0.05))
             .cornerRadius(12)
             
-            // Model Test Button
             HStack {
                 Button(isTestingModel ? "Тестирование..." : "Проверить инференс модели") {
                     isTestingModel = true
@@ -312,7 +380,6 @@ public struct SettingsView: View {
         VStack(spacing: 14) {
             Spacer()
             
-            // Minimalist Cyan Icon matching App Icon
             ZStack {
                 Circle()
                     .fill(Color(red: 0.05, green: 0.08, blue: 0.14))
@@ -407,29 +474,20 @@ public struct SettingsView: View {
                 displayParts.append("⌘")
             }
             
-            let keyName: String
-            switch Int(keyCode) {
-            case kVK_Space: keyName = "Space"
-            case kVK_Return: keyName = "Return"
-            case kVK_Tab: keyName = "Tab"
-            default:
-                keyName = event.charactersIgnoringModifiers?.uppercased() ?? "Key"
-            }
-            
+            // Map hardware keycode to Latin character regardless of active Russian/Cyrillic layout!
+            let keyName = KeycodeMapper.latinName(for: keyCode)
             displayParts.append(keyName)
             
-            
-            // Minimum requirement: must have at least one modifier
             if carbonMods == 0 {
-                // If user pressed Space with no modifier, default to Option + Space
                 carbonMods = UInt32(optionKey)
                 displayParts.insert("⌥", at: 0)
             }
             
+            let formattedTitle = displayParts.joined(separator: " ")
             preferences.setCustomShortcut(
                 keyCode: keyCode,
                 modifiers: carbonMods,
-                display: displayParts.joined(separator: " ")
+                display: formattedTitle
             )
             
             stopRecordingShortcut()

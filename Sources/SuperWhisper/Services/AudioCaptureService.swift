@@ -33,6 +33,53 @@ private final class ConverterState: @unchecked Sendable {
     var hasSupplied = false
 }
 
+// Nonisolated tap handler to guarantee zero MainActor assertion crashes from CoreAudio thread
+private final class AudioTapHandler: @unchecked Sendable {
+    private let accumulator: RawAudioAccumulator?
+    private let onLevelUpdate: @Sendable (Float, [Float]) -> Void
+    
+    init(accumulator: RawAudioAccumulator?, onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) {
+        self.accumulator = accumulator
+        self.onLevelUpdate = onLevelUpdate
+    }
+    
+    nonisolated func handleBuffer(_ buffer: AVAudioPCMBuffer) {
+        accumulator?.append(buffer)
+        
+        guard let channelData = buffer.floatChannelData else { return }
+        let frameLength = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        if frameLength == 0 || channelCount == 0 { return }
+        
+        var monoMix = [Float](repeating: 0.0, count: frameLength)
+        for ch in 0..<channelCount {
+            let ptr = channelData[ch]
+            vDSP_vadd(monoMix, 1, ptr, 1, &monoMix, 1, vDSP_Length(frameLength))
+        }
+        var scale = 1.0 / Float(channelCount)
+        vDSP_vsmul(monoMix, 1, &scale, &monoMix, 1, vDSP_Length(frameLength))
+        
+        var rms: Float = 0.0
+        vDSP_rmsqv(monoMix, 1, &rms, vDSP_Length(frameLength))
+        let normalizedLevel = min(max(rms * 9.0, 0.0), 1.0)
+        
+        var bandLevels = [Float](repeating: 0.05, count: 7)
+        let bandSize = frameLength / 7
+        if bandSize > 0 {
+            monoMix.withUnsafeBufferPointer { monoPtr in
+                guard let base = monoPtr.baseAddress else { return }
+                for i in 0..<7 {
+                    var bandRms: Float = 0.0
+                    vDSP_rmsqv(base.advanced(by: i * bandSize), 1, &bandRms, vDSP_Length(bandSize))
+                    bandLevels[i] = min(max(bandRms * 12.0, 0.05), 1.0)
+                }
+            }
+        }
+        
+        onLevelUpdate(normalizedLevel, bandLevels)
+    }
+}
+
 @MainActor
 public final class AudioCaptureService: ObservableObject {
     @Published public private(set) var isRecording = false
@@ -82,6 +129,12 @@ public final class AudioCaptureService: ObservableObject {
     public func startMonitoring() {
         guard !isRecording && !isMonitoring else { return }
         
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        guard status == .authorized else {
+            print("⚠️ [AudioCaptureService] Cannot start monitoring: mic permission not authorized (\(status.rawValue)).")
+            return
+        }
+        
         AudioCaptureService.activeService = self
         let inputNode = audioEngine.inputNode
         let format = inputNode.inputFormat(forBus: 0)
@@ -92,40 +145,14 @@ public final class AudioCaptureService: ObservableObject {
             hasInstalledTap = false
         }
         
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { (buffer, _) in
-            guard let channelData = buffer.floatChannelData else { return }
-            let frameLength = Int(buffer.frameLength)
-            let channelCount = Int(buffer.format.channelCount)
-            if frameLength == 0 || channelCount == 0 { return }
-            
-            var monoMix = [Float](repeating: 0.0, count: frameLength)
-            for ch in 0..<channelCount {
-                let ptr = channelData[ch]
-                vDSP_vadd(monoMix, 1, ptr, 1, &monoMix, 1, vDSP_Length(frameLength))
-            }
-            var scale = 1.0 / Float(channelCount)
-            vDSP_vsmul(monoMix, 1, &scale, &monoMix, 1, vDSP_Length(frameLength))
-            
-            var rms: Float = 0.0
-            vDSP_rmsqv(monoMix, 1, &rms, vDSP_Length(frameLength))
-            let normalizedLevel = min(max(rms * 10.0, 0.0), 1.0)
-            
-            var bandLevels = [Float](repeating: 0.05, count: 7)
-            let bandSize = frameLength / 7
-            if bandSize > 0 {
-                monoMix.withUnsafeBufferPointer { monoPtr in
-                    guard let base = monoPtr.baseAddress else { return }
-                    for i in 0..<7 {
-                        var bandRms: Float = 0.0
-                        vDSP_rmsqv(base.advanced(by: i * bandSize), 1, &bandRms, vDSP_Length(bandSize))
-                        bandLevels[i] = min(max(bandRms * 14.0, 0.05), 1.0)
-                    }
-                }
-            }
-            
+        let handler = AudioTapHandler(accumulator: nil) { level, bands in
             DispatchQueue.main.async {
-                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: normalizedLevel, bands: bandLevels)
+                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: level, bands: bands)
             }
+        }
+        
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { (buffer, _) in
+            handler.handleBuffer(buffer)
         }
         
         hasInstalledTap = true
@@ -177,45 +204,15 @@ public final class AudioCaptureService: ObservableObject {
             hasInstalledTap = false
         }
         
-        let accumulator = self.accumulator
-        let bufferSize: AVAudioFrameCount = 2048
-        
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { (buffer, time) in
-            accumulator.append(buffer)
-            
-            guard let channelData = buffer.floatChannelData else { return }
-            let frameLength = Int(buffer.frameLength)
-            let channelCount = Int(buffer.format.channelCount)
-            if frameLength == 0 || channelCount == 0 { return }
-            
-            var monoMix = [Float](repeating: 0.0, count: frameLength)
-            for ch in 0..<channelCount {
-                let ptr = channelData[ch]
-                vDSP_vadd(monoMix, 1, ptr, 1, &monoMix, 1, vDSP_Length(frameLength))
-            }
-            var scale = 1.0 / Float(channelCount)
-            vDSP_vsmul(monoMix, 1, &scale, &monoMix, 1, vDSP_Length(frameLength))
-            
-            var rms: Float = 0.0
-            vDSP_rmsqv(monoMix, 1, &rms, vDSP_Length(frameLength))
-            let normalizedLevel = min(max(rms * 9.0, 0.0), 1.0)
-            
-            var bandLevels = [Float](repeating: 0.05, count: 7)
-            let bandSize = frameLength / 7
-            if bandSize > 0 {
-                monoMix.withUnsafeBufferPointer { monoPtr in
-                    guard let base = monoPtr.baseAddress else { return }
-                    for i in 0..<7 {
-                        var bandRms: Float = 0.0
-                        vDSP_rmsqv(base.advanced(by: i * bandSize), 1, &bandRms, vDSP_Length(bandSize))
-                        bandLevels[i] = min(max(bandRms * 12.0, 0.05), 1.0)
-                    }
-                }
-            }
-            
+        let handler = AudioTapHandler(accumulator: self.accumulator) { level, bands in
             DispatchQueue.main.async {
-                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: normalizedLevel, bands: bandLevels)
+                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: level, bands: bands)
             }
+        }
+        
+        let bufferSize: AVAudioFrameCount = 2048
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { (buffer, _) in
+            handler.handleBuffer(buffer)
         }
         
         hasInstalledTap = true
