@@ -102,18 +102,18 @@ public struct SettingsView: View {
                     HStack(spacing: 12) {
                         HStack(spacing: 6) {
                             Image(systemName: "keyboard")
-                                .foregroundColor(.cyan)
+                                .foregroundColor(.accentColor)
                             
                             Text(isRecordingShortcut ? "Нажмите комбинацию клавиш..." : preferences.customShortcutDisplay)
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                                .foregroundColor(isRecordingShortcut ? .orange : .primary)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundColor(isRecordingShortcut ? .accentColor : .primary)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .background(Color.secondary.opacity(0.12))
                         .cornerRadius(8)
                         
-                        Button(isRecordingShortcut ? "Отмена" : "Записать свою комбинацию") {
+                        Button(isRecordingShortcut ? "Отмена" : "Записать комбинацию") {
                             if isRecordingShortcut {
                                 stopRecordingShortcut()
                             } else {
@@ -121,11 +121,10 @@ public struct SettingsView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(isRecordingShortcut ? .red : .accentColor)
                     }
                     
                     HStack(spacing: 8) {
-                        Text("Быстрые пресеты:")
+                        Text("Пресеты:")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -165,15 +164,18 @@ public struct SettingsView: View {
                     Text("Статус готовности к работе:")
                     Spacer()
                     if appState.isEngineReady {
-                        Text("🟢 Готов к работе (\(preferences.customShortcutDisplay))")
-                            .foregroundColor(.green)
-                            .font(.system(size: 12, weight: .semibold))
+                        HStack(spacing: 6) {
+                            Circle().fill(Color.green).frame(width: 8, height: 8)
+                            Text("Готов к работе (\(preferences.customShortcutDisplay))")
+                                .foregroundColor(.primary)
+                                .font(.system(size: 12, weight: .medium))
+                        }
                     } else {
                         HStack(spacing: 6) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("🟡 \(appState.engineStatusMessage)")
-                                .foregroundColor(.orange)
+                            Text(appState.engineStatusMessage)
+                                .foregroundColor(.secondary)
                                 .font(.system(size: 12, weight: .medium))
                         }
                     }
@@ -189,12 +191,17 @@ public struct SettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Тест микрофона (говорите прямо сейчас):")
+                        Text("Тест микрофона (говорите для проверки):")
                             .font(.subheadline)
                         Spacer()
-                        Text(appState.audioCapture.isMonitoring ? "🟢 Слушаю" : "⚪ Ожидание разрешения")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(appState.audioCapture.isMonitoring ? Color.green : Color.secondary)
+                                .frame(width: 7, height: 7)
+                            Text(appState.audioCapture.isMonitoring ? "Слушаю" : "Ожидание")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     
                     VStack(spacing: 8) {
@@ -221,7 +228,7 @@ public struct SettingsView: View {
                             ForEach(0..<appState.audioCapture.audioLevels.count, id: \.self) { i in
                                 let h = max(4, CGFloat(appState.audioCapture.audioLevels[i]) * 24)
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.cyan.opacity(0.85))
+                                    .fill(Color.accentColor.opacity(0.85))
                                     .frame(width: 8, height: h)
                                     .animation(.spring(response: 0.1, dampingFraction: 0.5), value: h)
                             }
@@ -233,13 +240,13 @@ public struct SettingsView: View {
                         .frame(height: 24)
                     }
                     
-                    Text("Столбики и шкала реагируют на громкость в реальном времени.")
+                    Text("Столбики и шкала реагируют на громкость речи в реальном времени.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Живой индикатор микрофона").font(.headline)
+                Text("Индикатор микрофона").font(.headline)
             }
             
             Section {
@@ -248,9 +255,11 @@ public struct SettingsView: View {
                     Spacer()
                     let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
                     if micStatus == .authorized {
-                        Text("🟢 Разрешён")
-                            .foregroundColor(.green)
-                            .font(.system(size: 12, weight: .semibold))
+                        HStack(spacing: 5) {
+                            Circle().fill(Color.green).frame(width: 7, height: 7)
+                            Text("Разрешён")
+                                .font(.system(size: 12, weight: .medium))
+                        }
                     } else {
                         Button("Запросить доступ") {
                             AVCaptureDevice.requestAccess(for: .audio) { granted in
@@ -268,17 +277,19 @@ public struct SettingsView: View {
                 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Универсальный доступ (для авто-вставки):")
+                        Text("Универсальный доступ:")
                             .font(.system(size: 13))
-                        Text("Необходим macOS для авто-нажатия Cmd+V в активном окне")
+                        Text("Необходим для автоматической вставки в активное окно")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     Spacer()
                     if appState.isAccessibilityGranted {
-                        Text("🟢 Разрешён")
-                            .foregroundColor(.green)
-                            .font(.system(size: 12, weight: .semibold))
+                        HStack(spacing: 5) {
+                            Circle().fill(Color.green).frame(width: 7, height: 7)
+                            Text("Разрешён")
+                                .font(.system(size: 12, weight: .medium))
+                        }
                     } else {
                         Button("Выдать доступ в Настройках") {
                             _ = AutoPasteService.checkAccessibilityPermissions(prompt: true)
@@ -291,7 +302,7 @@ public struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Системные разрешения macOS").font(.headline)
+                Text("Системные разрешения").font(.headline)
             }
         }
         .formStyle(.grouped)
@@ -323,12 +334,12 @@ public struct SettingsView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 44, height: 44)
-                    .foregroundColor(.cyan)
+                    .foregroundColor(.accentColor)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("OpenAI Whisper Large-v3-Turbo")
                         .font(.headline)
-                    Text("Флагманская модель CoreML с ускорением на Neural Engine")
+                    Text("Модель CoreML с ускорением на Apple Neural Engine")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -339,9 +350,9 @@ public struct SettingsView: View {
             .cornerRadius(12)
             
             VStack(spacing: 10) {
-                infoRow(label: "Размер модели на диске:", value: "598 МБ (установлена в App Support)")
+                infoRow(label: "Размер модели:", value: "598 МБ (локально)")
                 infoRow(label: "Аппаратный движок:", value: "Apple Neural Engine (ANE) + GPU")
-                infoRow(label: "Скорость распознавания:", value: "0.14x (40 сек речи за 5.4 сек)")
+                infoRow(label: "Скорость распознавания:", value: "0.14x (в 7 раз быстрее речи)")
                 infoRow(label: "Детектор пауз (VAD):", value: "Voice Activity Detection активен")
                 infoRow(label: "Конфиденциальность:", value: "100% On-Device (без интернета)")
             }
@@ -387,7 +398,7 @@ public struct SettingsView: View {
                     .overlay(
                         Circle().stroke(Color.cyan, lineWidth: 3)
                     )
-                    .shadow(color: Color.cyan.opacity(0.4), radius: 12)
+                    .shadow(color: Color.cyan.opacity(0.3), radius: 10)
                 
                 HStack(spacing: 4) {
                     bar(height: 14)
@@ -474,7 +485,6 @@ public struct SettingsView: View {
                 displayParts.append("⌘")
             }
             
-            // Map hardware keycode to Latin character regardless of active Russian/Cyrillic layout!
             let keyName = KeycodeMapper.latinName(for: keyCode)
             displayParts.append(keyName)
             
