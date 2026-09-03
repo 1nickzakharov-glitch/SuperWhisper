@@ -7,3 +7,4 @@ DerivedData/
 Models/
 *.bin
 SuperWhisper.app/Contents/MacOS/
+SuperWhisper.app/Contents/_CodeSignature/
