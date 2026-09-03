@@ -32,7 +32,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
-        print("✅ [AppDelegate] SuperWhisper ready. Hotkey: \(Preferences.shared.hotkeyPreset.title).")
+        print("✅ [AppDelegate] SuperWhisper ready. Hotkey: \(Preferences.shared.customShortcutDisplay).")
     }
     
     public func applicationWillTerminate(_ notification: Notification) {

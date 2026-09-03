@@ -29,8 +29,8 @@ public final class HotkeyService {
     }
     
     public func reloadCurrentHotkey() {
-        let preset = Preferences.shared.hotkeyPreset
-        registerGlobalHotkey(keyCode: preset.keyCode, modifiers: preset.modifiers)
+        let prefs = Preferences.shared
+        registerGlobalHotkey(keyCode: prefs.customKeyCode, modifiers: prefs.customModifiers)
     }
     
     @discardableResult
@@ -38,7 +38,6 @@ public final class HotkeyService {
         keyCode: UInt32,
         modifiers: UInt32
     ) -> Bool {
-        // Unregister previous hotkey if any
         if let existing = hotKeyRef {
             UnregisterEventHotKey(existing)
             self.hotKeyRef = nil
@@ -96,7 +95,7 @@ public final class HotkeyService {
         )
         
         if registerStatus == noErr {
-            print("⌨️ [HotkeyService] Global hotkey registered successfully (preset: \(Preferences.shared.hotkeyPreset.title)).")
+            print("⌨️ [HotkeyService] Registered global hotkey: \(Preferences.shared.customShortcutDisplay) (code: \(keyCode), mods: \(modifiers)).")
             return true
         } else {
             print("⚠️ [HotkeyService] Failed to register global hotkey, status: \(registerStatus)")

@@ -50,7 +50,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(NSMenuItem.separator())
         
         // 3. Hotkey Toggle Action
-        let shortcutTitle = Preferences.shared.hotkeyPreset.shortTitle
+        let shortcutTitle = Preferences.shared.customShortcutDisplay
         let toggleTitle: String
         switch appState.hudState {
         case .listening:

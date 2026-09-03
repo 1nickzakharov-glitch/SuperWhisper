@@ -36,6 +36,7 @@ private final class ConverterState: @unchecked Sendable {
 @MainActor
 public final class AudioCaptureService: ObservableObject {
     @Published public private(set) var isRecording = false
+    @Published public private(set) var isMonitoring = false
     @Published public private(set) var rmsLevel: Float = 0.0
     @Published public private(set) var audioLevels: [Float] = Array(repeating: 0.05, count: 7)
     
@@ -61,6 +62,8 @@ public final class AudioCaptureService: ObservableObject {
         print("🔄 [AudioCaptureService] Audio engine configuration changed.")
         if isRecording {
             _ = stopRecording()
+        } else if isMonitoring {
+            stopMonitoring()
         }
     }
     
@@ -76,7 +79,85 @@ public final class AudioCaptureService: ObservableObject {
         }
     }
     
+    public func startMonitoring() {
+        guard !isRecording && !isMonitoring else { return }
+        
+        AudioCaptureService.activeService = self
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.inputFormat(forBus: 0)
+        guard format.sampleRate > 0 else { return }
+        
+        if hasInstalledTap {
+            inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
+        }
+        
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { (buffer, _) in
+            guard let channelData = buffer.floatChannelData else { return }
+            let frameLength = Int(buffer.frameLength)
+            let channelCount = Int(buffer.format.channelCount)
+            if frameLength == 0 || channelCount == 0 { return }
+            
+            var monoMix = [Float](repeating: 0.0, count: frameLength)
+            for ch in 0..<channelCount {
+                let ptr = channelData[ch]
+                vDSP_vadd(monoMix, 1, ptr, 1, &monoMix, 1, vDSP_Length(frameLength))
+            }
+            var scale = 1.0 / Float(channelCount)
+            vDSP_vsmul(monoMix, 1, &scale, &monoMix, 1, vDSP_Length(frameLength))
+            
+            var rms: Float = 0.0
+            vDSP_rmsqv(monoMix, 1, &rms, vDSP_Length(frameLength))
+            let normalizedLevel = min(max(rms * 10.0, 0.0), 1.0)
+            
+            var bandLevels = [Float](repeating: 0.05, count: 7)
+            let bandSize = frameLength / 7
+            if bandSize > 0 {
+                monoMix.withUnsafeBufferPointer { monoPtr in
+                    guard let base = monoPtr.baseAddress else { return }
+                    for i in 0..<7 {
+                        var bandRms: Float = 0.0
+                        vDSP_rmsqv(base.advanced(by: i * bandSize), 1, &bandRms, vDSP_Length(bandSize))
+                        bandLevels[i] = min(max(bandRms * 14.0, 0.05), 1.0)
+                    }
+                }
+            }
+            
+            DispatchQueue.main.async {
+                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: normalizedLevel, bands: bandLevels)
+            }
+        }
+        
+        hasInstalledTap = true
+        do {
+            audioEngine.prepare()
+            try audioEngine.start()
+            self.isMonitoring = true
+            print("🎙️ [AudioCaptureService] Monitoring active (Settings mic test).")
+        } catch {
+            print("⚠️ [AudioCaptureService] Failed to start monitoring: \(error)")
+        }
+    }
+    
+    public func stopMonitoring() {
+        guard isMonitoring else { return }
+        
+        if hasInstalledTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
+        }
+        audioEngine.stop()
+        self.isMonitoring = false
+        self.rmsLevel = 0.0
+        self.audioLevels = Array(repeating: 0.05, count: 7)
+        AudioCaptureService.activeService = nil
+        print("🛑 [AudioCaptureService] Monitoring stopped.")
+    }
+    
     public func startRecording() throws {
+        if isMonitoring {
+            stopMonitoring()
+        }
         guard !isRecording else { return }
         
         _ = accumulator.drain()
@@ -107,7 +188,6 @@ public final class AudioCaptureService: ObservableObject {
             let channelCount = Int(buffer.format.channelCount)
             if frameLength == 0 || channelCount == 0 { return }
             
-            // Average across channels for RMS (handles stereo / USB interfaces cleanly)
             var monoMix = [Float](repeating: 0.0, count: frameLength)
             for ch in 0..<channelCount {
                 let ptr = channelData[ch]
@@ -116,12 +196,10 @@ public final class AudioCaptureService: ObservableObject {
             var scale = 1.0 / Float(channelCount)
             vDSP_vsmul(monoMix, 1, &scale, &monoMix, 1, vDSP_Length(frameLength))
             
-            // Compute RMS level for HUD
             var rms: Float = 0.0
             vDSP_rmsqv(monoMix, 1, &rms, vDSP_Length(frameLength))
             let normalizedLevel = min(max(rms * 9.0, 0.0), 1.0)
             
-            // Compute 7-band frequency levels
             var bandLevels = [Float](repeating: 0.05, count: 7)
             let bandSize = frameLength / 7
             if bandSize > 0 {
@@ -152,7 +230,7 @@ public final class AudioCaptureService: ObservableObject {
     
     @MainActor
     private static func sharedAudioLevelUpdate(normalizedLevel: Float, bands: [Float]) {
-        guard let service = activeService, service.isRecording else { return }
+        guard let service = activeService, (service.isRecording || service.isMonitoring) else { return }
         service.rmsLevel = service.rmsLevel * 0.25 + normalizedLevel * 0.75
         for i in 0..<7 {
             service.audioLevels[i] = service.audioLevels[i] * 0.35 + bands[i] * 0.65
@@ -178,7 +256,6 @@ public final class AudioCaptureService: ObservableObject {
             return []
         }
         
-        // High-quality polyphase resample using Apple's AVAudioConverter (anti-aliased)
         let converted = convertBuffersTo16kHzMono(buffers: rawBuffers, sourceFormat: format)
         print("🛑 [AudioCaptureService] Recording stopped. Output 16kHz samples: \(converted.count) (\(String(format: "%.2f", Double(converted.count) / 16000.0))s).")
         return converted

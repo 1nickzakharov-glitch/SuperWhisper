@@ -16,7 +16,9 @@ public final class AppState: ObservableObject {
     
     @Published public var hudState: HUDState = .idle
     @Published public var isEngineReady: Bool = false
-    @Published public var engineStatusMessage: String = "Загрузка модели Whisper..."
+    @Published public var engineStatusMessage: String = "Инициализация Whisper..."
+    @Published public var isAccessibilityGranted: Bool = false
+    @Published public var isMicPermissionGranted: Bool = true
     
     public let audioCapture = AudioCaptureService()
     public let transcriptionEngine = TranscriptionEngine()
@@ -29,6 +31,21 @@ public final class AppState: ObservableObject {
     
     private init() {
         overlayPanel.setupHUD(appState: self)
+        refreshPermissions()
+        
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshPermissions()
+            }
+        }
+    }
+    
+    public func refreshPermissions() {
+        self.isAccessibilityGranted = AutoPasteService.checkAccessibilityPermissions(prompt: false)
     }
     
     public func startEnginePrewarm() {
@@ -37,7 +54,7 @@ public final class AppState: ObservableObject {
                 try await self.transcriptionEngine.initialize()
                 await MainActor.run {
                     self.isEngineReady = true
-                    self.engineStatusMessage = "Готов к работе (\(Preferences.shared.hotkeyPreset.shortTitle))"
+                    self.engineStatusMessage = "Готов к работе (\(Preferences.shared.customShortcutDisplay))"
                     print("✨ [AppState] Engine prewarmed and ready.")
                 }
             } catch {
@@ -64,7 +81,6 @@ public final class AppState: ObservableObject {
     public func startRecording() {
         cancelPendingDismissal()
         
-        // Capture currently active app before anything else
         self.targetApplication = NSWorkspace.shared.frontmostApplication
         print("🎯 [AppState] Target application captured: \(self.targetApplication?.localizedName ?? "Unknown")")
         
@@ -74,6 +90,7 @@ public final class AppState: ObservableObject {
         
         Task {
             let hasMicPermission = await audioCapture.requestPermission()
+            self.isMicPermissionGranted = hasMicPermission
             guard hasMicPermission else {
                 self.hudState = .error(message: "Нет доступа к микрофону")
                 self.overlayPanel.showHUD()
@@ -122,15 +139,27 @@ public final class AppState: ObservableObject {
                     return
                 }
                 
-                // Perform automatic paste or fallback to clipboard
                 let didAutoPaste = AutoPasteService.shared.paste(text: text, targetApp: self.targetApplication)
                 self.hudState = .success(text: text, autoPasted: didAutoPaste)
-                
                 self.scheduleHUDDismissal(after: didAutoPaste ? 1.6 : 2.5)
             } catch {
                 self.hudState = .error(message: "Ошибка распознавания: \(error.localizedDescription)")
                 self.scheduleHUDDismissal(after: 3.0)
             }
+        }
+    }
+    
+    public func runSampleModelTest() async -> String {
+        do {
+            let sampleRate = 16000
+            var testBuffer = [Float](repeating: 0.0, count: Int(Double(sampleRate) * 1.5))
+            for i in 0..<testBuffer.count {
+                testBuffer[i] = sin(Float(i) * 0.05) * 0.1
+            }
+            _ = try await self.transcriptionEngine.transcribe(audioSamples: testBuffer, language: "ru")
+            return "✅ Модель успешно отвечает на запросы (инференс активен)!"
+        } catch {
+            return "❌ Ошибка теста: \(error.localizedDescription)"
         }
     }
     

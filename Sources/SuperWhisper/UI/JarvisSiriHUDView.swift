@@ -5,13 +5,12 @@ public struct JarvisSiriHUDView: View {
     
     @State private var rotationAngle: Double = 0
     
-    // Iridescent Siri & Jarvis color palette
     private let siriColors: [Color] = [
-        Color(red: 0.0, green: 0.95, blue: 1.0),   // Cyan / Jarvis Neon
-        Color(red: 0.3, green: 0.4, blue: 1.0),    // Electric Cobalt
-        Color(red: 0.7, green: 0.2, blue: 1.0),    // Purple / Siri Vivid
-        Color(red: 1.0, green: 0.2, blue: 0.6),    // Magenta Accent
-        Color(red: 0.0, green: 0.95, blue: 1.0)    // Loop to Cyan
+        Color(red: 0.0, green: 0.95, blue: 1.0),   // Cyan
+        Color(red: 0.3, green: 0.4, blue: 1.0),    // Cobalt
+        Color(red: 0.7, green: 0.2, blue: 1.0),    // Purple
+        Color(red: 1.0, green: 0.2, blue: 0.6),    // Magenta
+        Color(red: 0.0, green: 0.95, blue: 1.0)
     ]
     
     public init(appState: AppState) {
@@ -19,6 +18,16 @@ public struct JarvisSiriHUDView: View {
     }
     
     public var body: some View {
+        Group {
+            if appState.hudState == .idle {
+                Color.clear.frame(width: 440, height: 130)
+            } else {
+                activeHUDContent
+            }
+        }
+    }
+    
+    private var activeHUDContent: some View {
         ZStack {
             // 1. Ambient Siri Glow (outside capsule)
             RoundedRectangle(cornerRadius: 32, style: .continuous)
@@ -36,12 +45,8 @@ public struct JarvisSiriHUDView: View {
             
             // 2. Glassmorphic Capsule Body
             HStack(spacing: 16) {
-                // Jarvis Core Indicator
                 jarvisCoreNode
-                
-                // Status content & waveforms
                 statusContentView
-                
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 18)
@@ -49,16 +54,13 @@ public struct JarvisSiriHUDView: View {
             .frame(minWidth: 280, maxWidth: 390, minHeight: 64, maxHeight: 64)
             .background(
                 ZStack {
-                    // Deep dark glass
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(Color.black.opacity(0.80))
+                        .fill(Color.black.opacity(0.82))
                     
-                    // Ultra thin material
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
                         .fill(.ultraThinMaterial)
                         .opacity(0.85)
                     
-                    // Inner sharp iridescent border
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
                         .stroke(
                             AngularGradient(
@@ -74,7 +76,7 @@ public struct JarvisSiriHUDView: View {
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .shadow(color: Color.black.opacity(0.45), radius: 22, x: 0, y: 10)
         }
-        .padding(24) // room for glow
+        .padding(24)
         .onAppear {
             withAnimation(.linear(duration: 4.0).repeatForever(autoreverses: false)) {
                 rotationAngle = 360
@@ -82,14 +84,11 @@ public struct JarvisSiriHUDView: View {
         }
     }
     
-    // MARK: - Subviews
-    
     @ViewBuilder
     private var jarvisCoreNode: some View {
         ZStack {
             switch appState.hudState {
             case .listening:
-                // Jarvis Arc Reactor pulsing ring
                 Circle()
                     .stroke(Color.cyan.opacity(0.3), lineWidth: 2)
                     .frame(width: 32, height: 32)
@@ -103,7 +102,6 @@ public struct JarvisSiriHUDView: View {
                     .rotationEffect(.degrees(rotationAngle * 2.5))
                     .frame(width: 32, height: 32)
                 
-                // Reactive core pulsing with RMS level
                 Circle()
                     .fill(
                         RadialGradient(
@@ -120,7 +118,6 @@ public struct JarvisSiriHUDView: View {
                     .animation(.spring(response: 0.12, dampingFraction: 0.5), value: appState.audioCapture.rmsLevel)
                 
             case .processing:
-                // Fast spinning Jarvis processing ring
                 Circle()
                     .stroke(Color.white.opacity(0.15), lineWidth: 2.5)
                     .frame(width: 32, height: 32)
@@ -153,9 +150,7 @@ public struct JarvisSiriHUDView: View {
                     .foregroundColor(.red)
                 
             case .idle:
-                Circle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 32, height: 32)
+                EmptyView()
             }
         }
         .frame(width: 34, height: 34)
@@ -178,7 +173,6 @@ public struct JarvisSiriHUDView: View {
                 
                 Spacer()
                 
-                // Reactive Equalizer Waveform Bars (Jarvis visualizer)
                 HStack(spacing: 3) {
                     ForEach(0..<appState.audioCapture.audioLevels.count, id: \.self) { index in
                         let level = index < appState.audioCapture.audioLevels.count ? CGFloat(appState.audioCapture.audioLevels[index]) : 0.1
@@ -247,8 +241,6 @@ public struct JarvisSiriHUDView: View {
             EmptyView()
         }
     }
-    
-    // MARK: - Helpers
     
     private var glowLineWidth: CGFloat {
         switch appState.hudState {

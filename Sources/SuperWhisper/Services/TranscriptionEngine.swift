@@ -14,15 +14,12 @@ public actor TranscriptionEngine {
     public func resolveModelFolder() async throws -> URL {
         let fileManager = FileManager.default
         
-        // Search candidates
+        // Application Support is primary (unrestricted, zero TCC permission prompts)
         let candidatePaths: [URL] = [
-            // Standard Documents cache location
-            fileManager.urls(for: .documentDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(modelName)"),
-            // Application Support location
             fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
                 .appendingPathComponent("SuperWhisper/Models/\(modelName)"),
-            // Caches location
+            fileManager.urls(for: .documentDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(modelName)"),
             fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?
                 .appendingPathComponent("huggingface/hub/models--argmaxinc--whisperkit-coreml/\(modelName)")
         ].compactMap { $0 }
@@ -34,7 +31,6 @@ public actor TranscriptionEngine {
             }
         }
         
-        // If not found locally, download using WhisperKit
         print("📥 [TranscriptionEngine] Model not found locally, downloading \(modelName)...")
         let downloadedFolder = try await WhisperKit.download(variant: modelName)
         return downloadedFolder
@@ -78,7 +74,6 @@ public actor TranscriptionEngine {
         
         let fullText = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Clean special tokens if any leaked
         let cleaned = fullText
             .replacingOccurrences(of: "<\\|.*?\\|>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
