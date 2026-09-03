@@ -158,7 +158,7 @@ public final class AppState: ObservableObject {
                 self.hudState = .success(text: text, autoPasted: true)
                 
                 // Hide HUD first so target application gains full window & cursor focus!
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
                     self.overlayPanel.hideHUD {
                         Task { @MainActor in
                             self.hudState = .idle

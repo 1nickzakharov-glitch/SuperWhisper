@@ -22,8 +22,8 @@ public final class AutoPasteService {
             target.activate(options: .activateIgnoringOtherApps)
         }
         
-        // 3. Post simulated Cmd+V with settling delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        // 3. Post simulated Cmd+V with crisp, short 80ms settling delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
             self.dispatchCmdVKeystroke()
         }
         
@@ -43,12 +43,12 @@ public final class AutoPasteService {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
         
-        // Post key down
+        // Post key down to system and session event taps
         keyDown.post(tap: .cgSessionEventTap)
         keyDown.post(tap: .cghidEventTap)
         
-        // 25ms delay before key up
-        usleep(25_000)
+        // Crisp 20ms hold time
+        usleep(20_000)
         
         // Post key up
         keyUp.post(tap: .cgSessionEventTap)
