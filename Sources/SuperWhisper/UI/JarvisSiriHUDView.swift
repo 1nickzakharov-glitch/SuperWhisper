@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Dedicated interactive button with explicit hover feedback (lighting up & scaling)
 struct HoverActionButton: View {
     let icon: String
     let baseColor: Color
@@ -14,23 +13,30 @@ struct HoverActionButton: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(isHovered ? Color.white.opacity(0.24) : Color.white.opacity(0.08))
+                    .fill(isHovered ? Color.white.opacity(0.30) : Color.white.opacity(0.10))
                     .frame(width: 28, height: 28)
                     .overlay(
                         Circle()
-                            .stroke(isHovered ? activeColor.opacity(0.85) : Color.clear, lineWidth: 1.2)
+                            .stroke(isHovered ? activeColor : Color.clear, lineWidth: 1.4)
                     )
                 
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(isHovered ? activeColor : baseColor)
             }
-            .scaleEffect(isHovered ? 1.14 : 1.0)
-            .shadow(color: isHovered ? activeColor.opacity(0.4) : Color.clear, radius: 6)
-            .animation(.interactiveSpring(response: 0.20, dampingFraction: 0.65), value: isHovered)
+            .scaleEffect(isHovered ? 1.16 : 1.0)
+            .shadow(color: isHovered ? activeColor.opacity(0.45) : Color.clear, radius: 6)
+            .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.62), value: isHovered)
         }
         .buttonStyle(.plain)
-        .onHover { h in self.isHovered = h }
+        .onHover { hovering in
+            self.isHovered = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
         .help(helpText)
     }
 }
@@ -39,8 +45,10 @@ public struct JarvisSiriHUDView: View {
     @ObservedObject var appState: AppState
     @State private var isPillHovered = false
     
-    // Flat electric cyan color
+    // Flat modern electric cyan
     private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
+    // Symmetrical centered band layout: center has highest voice energy, flanked by sides
+    private let symmetricIndices = [7, 5, 3, 1, 0, 2, 4, 6, 8]
     
     public init(appState: AppState) {
         self.appState = appState
@@ -82,7 +90,7 @@ public struct JarvisSiriHUDView: View {
                             lineWidth: 1.0
                         )
                 )
-                // Soft diffused floating shadow
+                // Diffused soft floating shadow
                 .shadow(color: Color.black.opacity(0.25), radius: 14, x: 0, y: 7)
                 .shadow(color: flatCyan.opacity(0.10), radius: 6, x: 0, y: 2)
             
@@ -94,7 +102,7 @@ public struct JarvisSiriHUDView: View {
                         hoverControls
                             .transition(.opacity.combined(with: .scale(scale: 0.90)))
                     } else {
-                        equalizerView
+                        centeredEqualizerView
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     }
                     
@@ -125,18 +133,20 @@ public struct JarvisSiriHUDView: View {
         }
     }
     
-    // MARK: - 120 FPS Fluid FFT Equalizer (Real frequency bands, organic breathing)
-    private var equalizerView: some View {
+    // MARK: - Symmetrical Centered 120 FPS Liquid Equalizer
+    private var centeredEqualizerView: some View {
         TimelineView(.animation) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             
-            HStack(spacing: 3.5) {
+            HStack(spacing: 3.6) {
                 ForEach(0..<9, id: \.self) { i in
-                    let fftLevel = CGFloat(appState.audioCapture.audioLevels[i])
-                    // Subtle organic breathing wave in silence so it never looks dead
-                    let idleBreath = 4.0 + sin(time * 3.2 + Double(i) * 0.6) * 1.5
-                    let activeHeight = fftLevel * 25.0
-                    let barHeight = max(idleBreath, activeHeight)
+                    let bandIdx = symmetricIndices[i]
+                    let bandLevel = CGFloat(appState.audioCapture.audioLevels[bandIdx])
+                    
+                    // Smooth idle breathing wave when silent so bars never look static
+                    let idleBreath = 4.0 + sin(time * 2.8 + Double(i) * 0.45) * 1.3
+                    let speechHeight = bandLevel * 24.0
+                    let barHeight = max(idleBreath, speechHeight)
                     
                     RoundedRectangle(cornerRadius: 1.6)
                         .fill(flatCyan)
@@ -147,10 +157,10 @@ public struct JarvisSiriHUDView: View {
         }
     }
     
-    // MARK: - Hover Controls (Cancel ✕, Pause/Resume ⏸/▶, Done ✓ with hover states)
+    // MARK: - Hover Controls
     private var hoverControls: some View {
-        HStack(spacing: 12) {
-            // Cancel Button
+        HStack(spacing: 14) {
+            // Cancel Button (✕)
             HoverActionButton(
                 icon: "xmark",
                 baseColor: .red.opacity(0.85),
@@ -160,7 +170,7 @@ public struct JarvisSiriHUDView: View {
                 appState.cancelCurrentRecording()
             }
             
-            // Pause / Resume Button
+            // Pause / Resume Button (⏸ / ▶)
             HoverActionButton(
                 icon: appState.audioCapture.isPaused ? "play.fill" : "pause.fill",
                 baseColor: flatCyan.opacity(0.9),
@@ -170,7 +180,7 @@ public struct JarvisSiriHUDView: View {
                 appState.togglePauseCurrentRecording()
             }
             
-            // Done Button
+            // Done Button (✓)
             HoverActionButton(
                 icon: "checkmark",
                 baseColor: .green.opacity(0.85),
@@ -219,7 +229,7 @@ public struct JarvisSiriHUDView: View {
     private var capsuleWidth: CGFloat {
         switch appState.hudState {
         case .listening:
-            return isPillHovered ? 148 : 98
+            return isPillHovered ? 152 : 98
         case .processing:
             return 148
         case .success:

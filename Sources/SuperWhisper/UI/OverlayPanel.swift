@@ -21,6 +21,7 @@ public final class OverlayPanel: NSPanel {
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
         self.ignoresMouseEvents = false
+        self.acceptsMouseMovedEvents = true // CRUCIAL for SwiftUI .onHover to receive mouse moves!
         self.alphaValue = 0.0
     }
     
@@ -32,7 +33,6 @@ public final class OverlayPanel: NSPanel {
         let hosting = NSHostingView(rootView: view)
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = .clear
-        // Crucial: do not allow SwiftUI size changes to resize the AppKit NSWindow!
         hosting.sizingOptions = []
         self.contentView = hosting
         self.hostingView = hosting
@@ -50,7 +50,7 @@ public final class OverlayPanel: NSPanel {
     
     public func hideHUD(completion: (@Sendable @MainActor () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.18
+            context.duration = 0.16
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0.0
         }, completionHandler: {

@@ -1,43 +1,46 @@
 import Foundation
 import WhisperKit
+import CoreML
 import AVFoundation
 
 @main
-struct VerifyShort {
+struct SpeedBench {
     static func main() async {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let modelFolder = appSupport.appendingPathComponent("SuperWhisper/Models/openai_whisper-large-v3-v20240930_626MB")
         
-        let compute = ModelComputeOptions(melCompute: .cpuAndGPU, audioEncoderCompute: .cpuAndGPU, textDecoderCompute: .cpuAndGPU, prefillCompute: .cpuAndGPU)
-        let config = WhisperKitConfig(modelFolder: modelFolder.path, computeOptions: compute, verbose: false, prewarm: false, load: true)
-        let wk = try! await WhisperKit(config)
-        
-        let audioURL = URL(fileURLWithPath: "/tmp/short_test_16k.wav")
+        // Load 20s of audio
+        let audioURL = URL(fileURLWithPath: "/tmp/long_speech_16k.wav")
         let audioFile = try! AVAudioFile(forReading: audioURL)
-        let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: UInt32(audioFile.length))!
-        try! audioFile.read(into: buffer)
-        let data = buffer.floatChannelData![0]
-        let samples = Array(UnsafeBufferPointer(start: data, count: Int(buffer.frameLength)))
-        print("Short audio samples count: \(samples.count) (\(Double(samples.count)/16000.0)s)")
+        let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: 320000)! // 20s
+        try! audioFile.read(into: buffer, frameCount: 320000)
+        let samples = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+        print("Benchmarking with 20.0s of audio samples (\(samples.count))...\n")
         
-        // Test with promptTokens
-        let promptText = "Здравствуйте! Это пример русской речи: знаки препинания, запятые, точки, тире и вопросы всегда расставлены правильно."
-        let tokens = wk.tokenizer?.encode(text: promptText)
+        // Test 1: .cpuAndGPU
+        print("--- Test 1: .cpuAndGPU ---")
+        let comp1 = ModelComputeOptions(melCompute: .cpuAndGPU, audioEncoderCompute: .cpuAndGPU, textDecoderCompute: .cpuAndGPU, prefillCompute: .cpuAndGPU)
+        let cfg1 = WhisperKitConfig(modelFolder: modelFolder.path, computeOptions: comp1, verbose: false)
+        let t0_1 = Date()
+        let wk1 = try! await WhisperKit(cfg1)
+        print("Model load: \(String(format: "%.2f", Date().timeIntervalSince(t0_1)))s")
+        let t1_1 = Date()
+        let res1 = try! await wk1.transcribe(audioArray: samples, decodeOptions: DecodingOptions(task: .transcribe, language: "ru"))
+        let dur1 = Date().timeIntervalSince(t1_1)
+        print("Transcription time: \(String(format: "%.2f", dur1))s")
         
-        print("\n--- Test 1: With long prompt tokens ---")
-        let opt1 = DecodingOptions(task: .transcribe, language: "ru", promptTokens: tokens)
-        let res1 = try! await wk.transcribe(audioArray: samples, decodeOptions: opt1)
-        print("Result 1 text: '\(res1.map { $0.text }.joined(separator: " "))'")
+        // Test 2: .cpuAndNeuralEngine (ANE)
+        print("\n--- Test 2: .cpuAndNeuralEngine (Apple Neural Engine) ---")
+        let comp2 = ModelComputeOptions(melCompute: .cpuAndGPU, audioEncoderCompute: .cpuAndNeuralEngine, textDecoderCompute: .cpuAndNeuralEngine, prefillCompute: .cpuOnly)
+        let cfg2 = WhisperKitConfig(modelFolder: modelFolder.path, computeOptions: comp2, verbose: false)
+        let t0_2 = Date()
+        let wk2 = try! await WhisperKit(cfg2)
+        print("Model load: \(String(format: "%.2f", Date().timeIntervalSince(t0_2)))s")
+        let t1_2 = Date()
+        let res2 = try! await wk2.transcribe(audioArray: samples, decodeOptions: DecodingOptions(task: .transcribe, language: "ru"))
+        let dur2 = Date().timeIntervalSince(t1_2)
+        print("Transcription time: \(String(format: "%.2f", dur2))s")
         
-        print("\n--- Test 2: Without prompt tokens (clean) ---")
-        let opt2 = DecodingOptions(task: .transcribe, language: "ru")
-        let res2 = try! await wk.transcribe(audioArray: samples, decodeOptions: opt2)
-        print("Result 2 text: '\(res2.map { $0.text }.joined(separator: " "))'")
-        
-        print("\n--- Test 3: With short natural prompt: 'Привет, как дела? Хорошо.' ---")
-        let shortTokens = wk.tokenizer?.encode(text: "Привет, как дела? Хорошо.")
-        let opt3 = DecodingOptions(task: .transcribe, language: "ru", promptTokens: shortTokens)
-        let res3 = try! await wk.transcribe(audioArray: samples, decodeOptions: opt3)
-        print("Result 3 text: '\(res3.map { $0.text }.joined(separator: " "))'")
+        exit(0)
     }
 }

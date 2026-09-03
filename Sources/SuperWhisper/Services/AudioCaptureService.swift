@@ -40,9 +40,10 @@ private final class FFTAnalyzer: @unchecked Sendable {
                 vDSP_zvabs(&split, 1, &mags, 1, vDSP_Length(fftSize / 2))
                 
                 let binHz = sampleRate / Double(fftSize)
+                // 9 balanced bands covering the human speech range with equalized perception
                 let edges: [(Double, Double)] = [
-                    (100, 250), (250, 480), (480, 800), (800, 1300),
-                    (1300, 2200), (2200, 3500), (3500, 5000), (5000, 7500), (7500, 11000)
+                    (100, 220), (220, 380), (380, 600), (600, 950),
+                    (950, 1500), (1500, 2300), (2300, 3400), (3400, 4800), (4800, 6500)
                 ]
                 
                 for (i, edge) in edges.enumerated() {
@@ -52,7 +53,9 @@ private final class FFTAnalyzer: @unchecked Sendable {
                         var sum: Float = 0.0
                         for b in b0...b1 { sum += mags[b] }
                         let avg = sum / Float(b1 - b0 + 1)
-                        resultBands[i] = min(max(sqrt(avg * 0.18), 0.04), 1.0)
+                        // Frequency tilt gain: boosts higher harmonics proportionally
+                        let tiltGain: Float = 0.14 + Float(i) * 0.05
+                        resultBands[i] = min(max(sqrt(avg * tiltGain), 0.04), 1.0)
                     }
                 }
             }
@@ -104,7 +107,7 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            let level = min(max(sqrt(rms * 35.0), 0.04), 1.0)
+            let level = min(max(sqrt(rms * 28.0), 0.04), 1.0)
             
             let rawSamples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
             let bandLevels = analyzer.computeBands(samples: rawSamples, sampleRate: sr)
@@ -159,7 +162,7 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            let level = currentlyPaused ? 0.02 : min(max(sqrt(rms * 35.0), 0.04), 1.0)
+            let level = currentlyPaused ? 0.02 : min(max(sqrt(rms * 28.0), 0.04), 1.0)
             
             let rawSamples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
             let bandLevels: [Float]
@@ -332,10 +335,18 @@ public final class AudioCaptureService: ObservableObject {
         print("❌ [AudioCaptureService] Recording cancelled.")
     }
     
+    // Smooth symmetrical attack & decay: eliminates micro-jitter while keeping speech response vivid
     private func updateLevels(level: Float, bands: [Float]) {
-        self.rmsLevel = self.rmsLevel * 0.15 + level * 0.85
+        self.rmsLevel = self.rmsLevel * 0.70 + level * 0.30
         for i in 0..<min(bands.count, self.audioLevels.count) {
-            self.audioLevels[i] = self.audioLevels[i] * 0.20 + bands[i] * 0.80
+            let target = bands[i]
+            if target > self.audioLevels[i] {
+                // Smooth rise
+                self.audioLevels[i] = self.audioLevels[i] * 0.70 + target * 0.30
+            } else {
+                // Smooth decay
+                self.audioLevels[i] = self.audioLevels[i] * 0.80 + target * 0.20
+            }
         }
     }
 }

@@ -8,14 +8,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 [AppDelegate] SuperWhisper launching...")
         
-        // Run smoothly as a menu bar utility
         NSApp.setActivationPolicy(.accessory)
-        
-        // Initialize Menu Bar UI
         menuBarController = MenuBarController(appState: appState)
         
-        // Start Hotkey Listener
+        // Start Global Hotkey Listener
         HotkeyService.shared.startListening { [weak self] in
+            Task { @MainActor in
+                self?.appState.toggleRecording()
+            }
+        }
+        
+        // Distributed notification for automated testing and CLI inspection
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.nickzakharov.superwhisper.toggle"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             Task { @MainActor in
                 self?.appState.toggleRecording()
             }
@@ -24,7 +32,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start background prewarm of WhisperKit model
         appState.startEnginePrewarm()
         
-        // On first run, open settings to welcome the user
+        // First run onboarding
         if !Preferences.shared.hasCompletedOnboarding {
             Preferences.shared.hasCompletedOnboarding = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
