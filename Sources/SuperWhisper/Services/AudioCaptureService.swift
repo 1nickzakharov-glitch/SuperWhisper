@@ -8,6 +8,7 @@ private final class AudioEngineController: @unchecked Sendable {
     private let lock = NSLock()
     private var capturedBuffers: [AVAudioPCMBuffer] = []
     private var inputFormat: AVAudioFormat?
+    public var isPaused = false
     
     func startMonitoring(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
         stop()
@@ -28,10 +29,10 @@ private final class AudioEngineController: @unchecked Sendable {
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
             let level = min(max(rms * 9.0, 0.0), 1.0)
             
-            var bandLevels = [Float](repeating: 0.05, count: 7)
-            let bandSize = frameLength / 7
+            var bandLevels = [Float](repeating: 0.05, count: 9)
+            let bandSize = frameLength / 9
             if bandSize > 0 {
-                for i in 0..<7 {
+                for i in 0..<9 {
                     var bRms: Float = 0.0
                     vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
                     bandLevels[i] = min(max(bRms * 12.0, 0.05), 1.0)
@@ -51,6 +52,7 @@ private final class AudioEngineController: @unchecked Sendable {
         
         lock.lock()
         capturedBuffers.removeAll(keepingCapacity: true)
+        isPaused = false
         lock.unlock()
         
         let inputNode = engine.inputNode
@@ -61,36 +63,37 @@ private final class AudioEngineController: @unchecked Sendable {
         self.inputFormat = format
         
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { @Sendable (buffer, time) in
-            // Store copy of buffer
-            if let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
-                copy.frameLength = buffer.frameLength
-                let chCount = Int(buffer.format.channelCount)
-                for ch in 0..<chCount {
-                    if let src = buffer.floatChannelData?[ch], let dst = copy.floatChannelData?[ch] {
-                        memcpy(dst, src, Int(buffer.frameLength) * MemoryLayout<Float>.size)
+            // Only accumulate buffers if not paused
+            if !self.isPaused {
+                if let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
+                    copy.frameLength = buffer.frameLength
+                    let chCount = Int(buffer.format.channelCount)
+                    for ch in 0..<chCount {
+                        if let src = buffer.floatChannelData?[ch], let dst = copy.floatChannelData?[ch] {
+                            memcpy(dst, src, Int(buffer.frameLength) * MemoryLayout<Float>.size)
+                        }
                     }
+                    self.lock.lock()
+                    self.capturedBuffers.append(copy)
+                    self.lock.unlock()
                 }
-                self.lock.lock()
-                self.capturedBuffers.append(copy)
-                self.lock.unlock()
             }
             
-            // Compute audio levels
             guard let channelData = buffer.floatChannelData?[0] else { return }
             let frameLength = Int(buffer.frameLength)
             if frameLength == 0 { return }
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            let level = min(max(rms * 9.0, 0.0), 1.0)
+            let level = self.isPaused ? 0.02 : min(max(rms * 9.0, 0.0), 1.0)
             
-            var bandLevels = [Float](repeating: 0.05, count: 7)
-            let bandSize = frameLength / 7
+            var bandLevels = [Float](repeating: 0.05, count: 9)
+            let bandSize = frameLength / 9
             if bandSize > 0 {
-                for i in 0..<7 {
+                for i in 0..<9 {
                     var bRms: Float = 0.0
                     vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
-                    bandLevels[i] = min(max(bRms * 12.0, 0.05), 1.0)
+                    bandLevels[i] = self.isPaused ? 0.05 : min(max(bRms * 12.0, 0.05), 1.0)
                 }
             }
             
@@ -156,15 +159,23 @@ private final class AudioEngineController: @unchecked Sendable {
 @MainActor
 public final class AudioCaptureService: ObservableObject {
     @Published public private(set) var isRecording = false
+    @Published public private(set) var isPaused = false
     @Published public private(set) var isMonitoring = false
     @Published public private(set) var rmsLevel: Float = 0.0
-    @Published public private(set) var audioLevels: [Float] = Array(repeating: 0.05, count: 7)
+    @Published public private(set) var audioLevels: [Float] = Array(repeating: 0.05, count: 9)
     
     private let controller = AudioEngineController()
     
     public init() {}
     
     public func requestPermission() async -> Bool {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        if status == .authorized {
+            return true
+        } else if status == .denied || status == .restricted {
+            return false
+        }
+        
         if #available(macOS 14.0, *) {
             return await AVAudioApplication.requestRecordPermission()
         } else {
@@ -189,7 +200,6 @@ public final class AudioCaptureService: ObservableObject {
                 }
             }
             self.isMonitoring = true
-            print("🎙️ [AudioCaptureService] Monitoring active.")
         } catch {
             print("⚠️ [AudioCaptureService] Failed monitoring: \(error)")
         }
@@ -200,7 +210,7 @@ public final class AudioCaptureService: ObservableObject {
         controller.stop()
         self.isMonitoring = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 7)
+        self.audioLevels = Array(repeating: 0.05, count: 9)
     }
     
     public func startRecording() throws {
@@ -216,9 +226,17 @@ public final class AudioCaptureService: ObservableObject {
         }
         
         self.isRecording = true
+        self.isPaused = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 7)
+        self.audioLevels = Array(repeating: 0.05, count: 9)
         print("🎙️ [AudioCaptureService] Recording started.")
+    }
+    
+    public func togglePause() {
+        guard isRecording else { return }
+        self.isPaused.toggle()
+        controller.isPaused = self.isPaused
+        print("⏸️ [AudioCaptureService] Paused: \(isPaused)")
     }
     
     public func stopRecording() -> [Float] {
@@ -226,16 +244,27 @@ public final class AudioCaptureService: ObservableObject {
         
         let samples = controller.drainSamplesConvertedTo16k()
         self.isRecording = false
+        self.isPaused = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 7)
+        self.audioLevels = Array(repeating: 0.05, count: 9)
         print("🛑 [AudioCaptureService] Recording stopped. Output \(samples.count) samples (16kHz).")
         return samples
     }
     
+    public func cancelRecording() {
+        guard isRecording else { return }
+        _ = controller.drainSamplesConvertedTo16k()
+        self.isRecording = false
+        self.isPaused = false
+        self.rmsLevel = 0.0
+        self.audioLevels = Array(repeating: 0.05, count: 9)
+        print("❌ [AudioCaptureService] Recording cancelled.")
+    }
+    
     private func updateLevels(level: Float, bands: [Float]) {
-        self.rmsLevel = self.rmsLevel * 0.25 + level * 0.75
-        for i in 0..<7 {
-            self.audioLevels[i] = self.audioLevels[i] * 0.35 + bands[i] * 0.65
+        self.rmsLevel = self.rmsLevel * 0.20 + level * 0.80
+        for i in 0..<min(bands.count, self.audioLevels.count) {
+            self.audioLevels[i] = self.audioLevels[i] * 0.30 + bands[i] * 0.70
         }
     }
 }

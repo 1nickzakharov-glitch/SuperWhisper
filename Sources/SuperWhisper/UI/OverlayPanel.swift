@@ -7,7 +7,7 @@ public final class OverlayPanel: NSPanel {
     
     public init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 80),
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 70),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -20,7 +20,7 @@ public final class OverlayPanel: NSPanel {
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
-        self.ignoresMouseEvents = true
+        self.ignoresMouseEvents = false // Allows hover buttons and cancel/pause clicks!
         self.alphaValue = 0.0
     }
     
@@ -40,7 +40,7 @@ public final class OverlayPanel: NSPanel {
         repositionOnScreen()
         self.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
+            context.duration = 0.16
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().alphaValue = 1.0
         }
@@ -48,7 +48,7 @@ public final class OverlayPanel: NSPanel {
     
     public func hideHUD(completion: (@Sendable @MainActor () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.20
+            context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0.0
         }, completionHandler: {
@@ -65,12 +65,11 @@ public final class OverlayPanel: NSPanel {
         guard let screen = targetScreen else { return }
         
         let screenRect = screen.visibleFrame
-        let width: CGFloat = 280
-        let height: CGFloat = 80
+        let width: CGFloat = 260
+        let height: CGFloat = 70
         
-        // Position at bottom center (70pt above dock)
         let x = screenRect.origin.x + (screenRect.width - width) / 2.0
-        let y = screenRect.origin.y + 70.0
+        let y = screenRect.origin.y + 65.0
         
         self.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     }

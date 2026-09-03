@@ -26,6 +26,7 @@ public final class AppState: ObservableObject {
     
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
+    private var accumulatedDuration: TimeInterval = 0
     private var targetApplication: NSRunningApplication?
     private var dismissalWorkItem: DispatchWorkItem?
     
@@ -101,6 +102,7 @@ public final class AppState: ObservableObject {
             do {
                 try self.audioCapture.startRecording()
                 self.recordingStartTime = Date()
+                self.accumulatedDuration = 0
                 self.hudState = .listening(duration: 0.0)
                 self.overlayPanel.showHUD()
                 self.startDurationTimer()
@@ -110,6 +112,18 @@ public final class AppState: ObservableObject {
                 self.scheduleHUDDismissal(after: 2.5)
             }
         }
+    }
+    
+    public func cancelCurrentRecording() {
+        stopDurationTimer()
+        audioCapture.cancelRecording()
+        self.hudState = .idle
+        self.overlayPanel.hideHUD()
+        print("🚫 [AppState] Recording cancelled by user.")
+    }
+    
+    public func togglePauseCurrentRecording() {
+        audioCapture.togglePause()
     }
     
     public func stopRecordingAndTranscribe() {
@@ -141,7 +155,7 @@ public final class AppState: ObservableObject {
                 
                 let didAutoPaste = AutoPasteService.shared.paste(text: text, targetApp: self.targetApplication)
                 self.hudState = .success(text: text, autoPasted: didAutoPaste)
-                self.scheduleHUDDismissal(after: didAutoPaste ? 1.6 : 2.5)
+                self.scheduleHUDDismissal(after: didAutoPaste ? 1.4 : 2.2)
             } catch {
                 self.hudState = .error(message: "Ошибка распознавания: \(error.localizedDescription)")
                 self.scheduleHUDDismissal(after: 3.0)
@@ -168,9 +182,11 @@ public final class AppState: ObservableObject {
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self, let start = self.recordingStartTime else { return }
-                let elapsed = Date().timeIntervalSince(start)
-                if case .listening = self.hudState {
-                    self.hudState = .listening(duration: elapsed)
+                if !self.audioCapture.isPaused {
+                    let elapsed = Date().timeIntervalSince(start)
+                    if case .listening = self.hudState {
+                        self.hudState = .listening(duration: elapsed)
+                    }
                 }
             }
         }

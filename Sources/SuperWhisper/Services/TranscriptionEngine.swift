@@ -6,7 +6,6 @@ public actor TranscriptionEngine {
     private var whisperKit: WhisperKit?
     private var isWarmedUp = false
     private let modelName: String
-    private var cachedPromptTokens: [Int]?
     
     public init(modelName: String = "openai_whisper-large-v3-v20240930_626MB") {
         self.modelName = modelName
@@ -51,13 +50,6 @@ public actor TranscriptionEngine {
         
         let wk = try await WhisperKit(config)
         self.whisperKit = wk
-        
-        // Pre-encode conditioning prompt to force punctuation and capitalization in Russian
-        let punctuationPrompt = "Здравствуйте! Это пример русской речи: знаки препинания, запятые, точки, тире и вопросы всегда расставлены правильно."
-        if let tok = wk.tokenizer {
-            self.cachedPromptTokens = tok.encode(text: punctuationPrompt)
-        }
-        
         self.isWarmedUp = true
         print("✅ [TranscriptionEngine] Initialized successfully! Model: \(wk.modelVariant)")
     }
@@ -76,13 +68,17 @@ public actor TranscriptionEngine {
         }
         
         let start = Date()
+        let audioDuration = Double(audioSamples.count) / 16000.0
+        
+        // Use VAD chunking only for audio > 30 seconds
+        let chunking: ChunkingStrategy? = audioDuration > 30.0 ? .vad : nil
+        
         let options = DecodingOptions(
             task: .transcribe,
             language: language,
             temperature: 0.0,
             detectLanguage: language == nil,
-            promptTokens: self.cachedPromptTokens,
-            chunkingStrategy: .vad
+            chunkingStrategy: chunking
         )
         
         let results = try await whisperKit.transcribe(audioArray: audioSamples, decodeOptions: options)
@@ -93,10 +89,8 @@ public actor TranscriptionEngine {
             .replacingOccurrences(of: "<\\|.*?\\|>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Smart punctuation formatting
         let formatted = TextPunctuationFormatter.format(noTokens)
-        
-        print("🎙️ [TranscriptionEngine] Transcribed in \(String(format: "%.2f", duration))s: \(formatted)")
+        print("🎙️ [TranscriptionEngine] Transcribed \(String(format: "%.2f", audioDuration))s in \(String(format: "%.2f", duration))s: \(formatted)")
         return formatted
     }
 }
