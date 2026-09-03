@@ -11,58 +11,50 @@ public final class AutoPasteService {
     public func paste(text: String, targetApp: NSRunningApplication?) -> Bool {
         guard !text.isEmpty else { return false }
         
-        // 1. Put text on clipboard
+        // 1. Set text on system clipboard
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        print("📋 [AutoPasteService] Set \(text.count) chars on pasteboard: '\(text)'")
+        print("📋 [AutoPasteService] Set text in pasteboard (\(text.count) chars)")
         
-        // 2. Reactivate target application if specified
+        // 2. Reactivate target application so it regains keyboard focus
         if let target = targetApp, target.processIdentifier != NSRunningApplication.current.processIdentifier {
-            target.activate(options: .activateAllWindows)
+            target.activate(options: .activateIgnoringOtherApps)
         }
         
-        // 3. Dispatch simulated paste with settling delay
-        let targetPid = targetApp?.processIdentifier
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-            self.simulatePasteKeystroke(targetPid: targetPid)
+        // 3. Post simulated Cmd+V with settling delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            self.dispatchCmdVKeystroke()
         }
         
         return true
     }
     
-    private func simulatePasteKeystroke(targetPid: pid_t?) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        let commandKey: CGKeyCode = 0x37 // Virtual keycode for Command
-        let vKey: CGKeyCode = 0x09       // Virtual keycode for V (layout-independent)
+    private func dispatchCmdVKeystroke() {
+        let vKeyCode: CGKeyCode = 0x09 // Virtual keycode for 'V' (layout-independent)
+        let source = CGEventSource(stateID: .combinedSessionState)
         
-        // Post full 4-event sequence (Command Down -> V Down -> V Up -> Command Up)
-        if let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: commandKey, keyDown: true),
-           let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
-           let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false),
-           let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: commandKey, keyDown: false) {
-            
-            vDown.flags = .maskCommand
-            vUp.flags = .maskCommand
-            
-            cmdDown.post(tap: .cghidEventTap)
-            vDown.post(tap: .cghidEventTap)
-            vUp.post(tap: .cghidEventTap)
-            cmdUp.post(tap: .cghidEventTap)
-            print("🚀 [AutoPasteService] CGEvent 4-step Cmd+V dispatched.")
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
+            print("⚠️ [AutoPasteService] Failed to create CGEvents")
+            return
         }
         
-        // AppleScript fallback after brief tick for Electron / web apps
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
-            let scriptSource = "tell application \"System Events\" to keystroke \"v\" using command down"
-            if let script = NSAppleScript(source: scriptSource) {
-                var err: NSDictionary?
-                script.executeAndReturnError(&err)
-                if err == nil {
-                    print("🚀 [AutoPasteService] AppleScript System Events keystroke dispatched.")
-                }
-            }
-        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        
+        // Post key down
+        keyDown.post(tap: .cgSessionEventTap)
+        keyDown.post(tap: .cghidEventTap)
+        
+        // 25ms delay before key up
+        usleep(25_000)
+        
+        // Post key up
+        keyUp.post(tap: .cgSessionEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        
+        print("🚀 [AutoPasteService] Pure Cmd+V keystroke dispatched to active app.")
     }
     
     public static func checkAccessibilityPermissions(prompt: Bool = false) -> Bool {
