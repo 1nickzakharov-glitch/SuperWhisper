@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>SuperWhisper</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.nickzakharov.superwhisper</string>
+    <key>CFBundleName</key>
+    <string>SuperWhisper</string>
+    <key>CFBundleDisplayName</key>
+    <string>SuperWhisper</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SuperWhisper необходим доступ к микрофону для диктовки текста.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>SuperWhisper распознает речь локально с помощью модели Whisper Large-v3-Turbo.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>SuperWhisper использует системный доступ для автоматической вставки надиктованного текста.</string>
+</dict>
+</plist>
