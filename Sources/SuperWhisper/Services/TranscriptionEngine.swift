@@ -13,25 +13,16 @@ public actor TranscriptionEngine {
     
     public func resolveModelFolder() async throws -> URL {
         let fileManager = FileManager.default
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let modelFolder = appSupport.appendingPathComponent("SuperWhisper/Models/\(modelName)")
         
-        // Application Support is primary (unrestricted, zero TCC permission prompts)
-        let candidatePaths: [URL] = [
-            fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("SuperWhisper/Models/\(modelName)"),
-            fileManager.urls(for: .documentDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(modelName)"),
-            fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("huggingface/hub/models--argmaxinc--whisperkit-coreml/\(modelName)")
-        ].compactMap { $0 }
-        
-        for url in candidatePaths {
-            if fileManager.fileExists(atPath: url.path) {
-                print("📁 [TranscriptionEngine] Found local model at: \(url.path)")
-                return url
-            }
+        if fileManager.fileExists(atPath: modelFolder.path) {
+            print("📁 [TranscriptionEngine] Found local model at: \(modelFolder.path)")
+            return modelFolder
         }
         
-        print("📥 [TranscriptionEngine] Model not found locally, downloading \(modelName)...")
+        // Fallback: download if missing
+        print("📥 [TranscriptionEngine] Downloading \(modelName)...")
         let downloadedFolder = try await WhisperKit.download(variant: modelName)
         return downloadedFolder
     }
@@ -40,8 +31,25 @@ public actor TranscriptionEngine {
         if whisperKit != nil { return }
         
         let modelFolder = try await resolveModelFolder()
-        print("🚀 [TranscriptionEngine] Initializing WhisperKit from \(modelFolder.path)...")
-        let wk = try await WhisperKit(modelFolder: modelFolder.path, verbose: false)
+        print("🚀 [TranscriptionEngine] Loading WhisperKit with .cpuAndGPU from \(modelFolder.path)...")
+        
+        let compute = ModelComputeOptions(
+            melCompute: .cpuAndGPU,
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndGPU,
+            prefillCompute: .cpuAndGPU
+        )
+        
+        let config = WhisperKitConfig(
+            modelFolder: modelFolder.path,
+            computeOptions: compute,
+            verbose: false,
+            logLevel: .error,
+            prewarm: false,
+            load: true
+        )
+        
+        let wk = try await WhisperKit(config)
         self.whisperKit = wk
         self.isWarmedUp = true
         print("✅ [TranscriptionEngine] Initialized successfully! Model: \(wk.modelVariant)")

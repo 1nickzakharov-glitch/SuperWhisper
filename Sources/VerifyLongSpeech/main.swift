@@ -1,45 +1,47 @@
 import Foundation
+import WhisperKit
+import CoreML
 import AVFoundation
 
 @main
-struct VerifyAudioTap {
+struct VerifyComputeOptions {
     static func main() async {
-        print("🎙️ Testing AudioCaptureService recording tap without crashes...")
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let modelFolder = appSupport.appendingPathComponent("SuperWhisper/Models/openai_whisper-large-v3-v20240930_626MB")
         
-        // Check mic permission
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
-        print("Microphone status: \(status.rawValue)")
+        let compute = ModelComputeOptions(
+            melCompute: .cpuAndGPU,
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndGPU,
+            prefillCompute: .cpuAndGPU
+        )
         
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let format = inputNode.inputFormat(forBus: 0)
-        print("Microphone format: \(format.sampleRate)Hz, \(format.channelCount)ch")
+        let config = WhisperKitConfig(
+            modelFolder: modelFolder.path,
+            computeOptions: compute,
+            verbose: false,
+            logLevel: .error,
+            prewarm: false,
+            load: true
+        )
         
-        var bufferCount = 0
-        let lock = NSLock()
+        print("Initializing...")
+        let wk = try! await WhisperKit(config)
         
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { (buffer, time) in
-            lock.lock()
-            bufferCount += 1
-            let count = bufferCount
-            lock.unlock()
-            
-            if count % 10 == 0 {
-                print("Tap successfully running from CoreAudio thread: \(count) buffers received")
-            }
-        }
+        print("Testing transcription speed with .cpuAndGPU...")
+        let audioURL = URL(fileURLWithPath: "/tmp/long_speech_16k.wav")
+        let audioFile = try! AVAudioFile(forReading: audioURL)
+        let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: UInt32(audioFile.length))!
+        try! audioFile.read(into: buffer)
+        let data = buffer.floatChannelData![0]
+        let samples = Array(UnsafeBufferPointer(start: data, count: Int(buffer.frameLength)))
         
-        do {
-            try engine.start()
-            print("AVAudioEngine started! Listening for 2 seconds...")
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-            inputNode.removeTap(onBus: 0)
-            engine.stop()
-            print("✅ SUCCESS: Received \(bufferCount) audio buffers with ZERO crashes!")
-            exit(0)
-        } catch {
-            print("❌ Engine start failed: \(error)")
-            exit(1)
-        }
+        let t0 = Date()
+        let options = DecodingOptions(task: .transcribe, language: "ru", chunkingStrategy: .vad)
+        let res = try! await wk.transcribe(audioArray: samples, decodeOptions: options)
+        let elapsed = Date().timeIntervalSince(t0)
+        print("Transcribed 40s audio in \(String(format: "%.2f", elapsed))s!")
+        print("Result preview: \(res.map { $0.text }.joined(separator: " ").prefix(120))...")
+        exit(0)
     }
 }

@@ -2,81 +2,154 @@ import Foundation
 @preconcurrency import AVFoundation
 import Accelerate
 
-private final class RawAudioAccumulator: @unchecked Sendable {
+private final class AudioEngineController: @unchecked Sendable {
+    private let engine = AVAudioEngine()
+    private var hasInstalledTap = false
     private let lock = NSLock()
-    private var buffers: [AVAudioPCMBuffer] = []
+    private var capturedBuffers: [AVAudioPCMBuffer] = []
+    private var inputFormat: AVAudioFormat?
     
-    func append(_ buffer: AVAudioPCMBuffer) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
-        copy.frameLength = buffer.frameLength
-        let channelCount = Int(buffer.format.channelCount)
-        for ch in 0..<channelCount {
-            if let src = buffer.floatChannelData?[ch], let dst = copy.floatChannelData?[ch] {
-                memcpy(dst, src, Int(buffer.frameLength) * MemoryLayout<Float>.size)
-            }
+    func startMonitoring(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
+        stop()
+        
+        let inputNode = engine.inputNode
+        let format = inputNode.inputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
-        buffers.append(copy)
-    }
-    
-    func drain() -> [AVAudioPCMBuffer] {
-        lock.lock()
-        defer { lock.unlock() }
-        let current = buffers
-        buffers.removeAll(keepingCapacity: true)
-        return current
-    }
-}
-
-private final class ConverterState: @unchecked Sendable {
-    var hasSupplied = false
-}
-
-// Nonisolated tap handler to guarantee zero MainActor assertion crashes from CoreAudio thread
-private final class AudioTapHandler: @unchecked Sendable {
-    private let accumulator: RawAudioAccumulator?
-    private let onLevelUpdate: @Sendable (Float, [Float]) -> Void
-    
-    init(accumulator: RawAudioAccumulator?, onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) {
-        self.accumulator = accumulator
-        self.onLevelUpdate = onLevelUpdate
-    }
-    
-    nonisolated func handleBuffer(_ buffer: AVAudioPCMBuffer) {
-        accumulator?.append(buffer)
+        self.inputFormat = format
         
-        guard let channelData = buffer.floatChannelData else { return }
-        let frameLength = Int(buffer.frameLength)
-        let channelCount = Int(buffer.format.channelCount)
-        if frameLength == 0 || channelCount == 0 { return }
-        
-        var monoMix = [Float](repeating: 0.0, count: frameLength)
-        for ch in 0..<channelCount {
-            let ptr = channelData[ch]
-            vDSP_vadd(monoMix, 1, ptr, 1, &monoMix, 1, vDSP_Length(frameLength))
-        }
-        var scale = 1.0 / Float(channelCount)
-        vDSP_vsmul(monoMix, 1, &scale, &monoMix, 1, vDSP_Length(frameLength))
-        
-        var rms: Float = 0.0
-        vDSP_rmsqv(monoMix, 1, &rms, vDSP_Length(frameLength))
-        let normalizedLevel = min(max(rms * 9.0, 0.0), 1.0)
-        
-        var bandLevels = [Float](repeating: 0.05, count: 7)
-        let bandSize = frameLength / 7
-        if bandSize > 0 {
-            monoMix.withUnsafeBufferPointer { monoPtr in
-                guard let base = monoPtr.baseAddress else { return }
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable (buffer, time) in
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frameLength = Int(buffer.frameLength)
+            if frameLength == 0 { return }
+            
+            var rms: Float = 0.0
+            vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
+            let level = min(max(rms * 9.0, 0.0), 1.0)
+            
+            var bandLevels = [Float](repeating: 0.05, count: 7)
+            let bandSize = frameLength / 7
+            if bandSize > 0 {
                 for i in 0..<7 {
-                    var bandRms: Float = 0.0
-                    vDSP_rmsqv(base.advanced(by: i * bandSize), 1, &bandRms, vDSP_Length(bandSize))
-                    bandLevels[i] = min(max(bandRms * 12.0, 0.05), 1.0)
+                    var bRms: Float = 0.0
+                    vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
+                    bandLevels[i] = min(max(bRms * 12.0, 0.05), 1.0)
                 }
             }
+            
+            onLevelUpdate(level, bandLevels)
         }
         
-        onLevelUpdate(normalizedLevel, bandLevels)
+        hasInstalledTap = true
+        engine.prepare()
+        try engine.start()
+    }
+    
+    func startRecording(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
+        stop()
+        
+        lock.lock()
+        capturedBuffers.removeAll(keepingCapacity: true)
+        lock.unlock()
+        
+        let inputNode = engine.inputNode
+        let format = inputNode.inputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
+        }
+        self.inputFormat = format
+        
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { @Sendable (buffer, time) in
+            // Store copy of buffer
+            if let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
+                copy.frameLength = buffer.frameLength
+                let chCount = Int(buffer.format.channelCount)
+                for ch in 0..<chCount {
+                    if let src = buffer.floatChannelData?[ch], let dst = copy.floatChannelData?[ch] {
+                        memcpy(dst, src, Int(buffer.frameLength) * MemoryLayout<Float>.size)
+                    }
+                }
+                self.lock.lock()
+                self.capturedBuffers.append(copy)
+                self.lock.unlock()
+            }
+            
+            // Compute audio levels
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frameLength = Int(buffer.frameLength)
+            if frameLength == 0 { return }
+            
+            var rms: Float = 0.0
+            vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
+            let level = min(max(rms * 9.0, 0.0), 1.0)
+            
+            var bandLevels = [Float](repeating: 0.05, count: 7)
+            let bandSize = frameLength / 7
+            if bandSize > 0 {
+                for i in 0..<7 {
+                    var bRms: Float = 0.0
+                    vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
+                    bandLevels[i] = min(max(bRms * 12.0, 0.05), 1.0)
+                }
+            }
+            
+            onLevelUpdate(level, bandLevels)
+        }
+        
+        hasInstalledTap = true
+        engine.prepare()
+        try engine.start()
+    }
+    
+    func stop() {
+        if hasInstalledTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
+        }
+        engine.stop()
+    }
+    
+    func drainSamplesConvertedTo16k() -> [Float] {
+        stop()
+        
+        lock.lock()
+        let buffers = capturedBuffers
+        capturedBuffers.removeAll(keepingCapacity: true)
+        lock.unlock()
+        
+        guard let sourceFormat = inputFormat, !buffers.isEmpty else { return [] }
+        guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false) else { return [] }
+        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else { return [] }
+        
+        final class SupplyState: @unchecked Sendable { var supplied = false }
+        var outputSamples: [Float] = []
+        
+        for buf in buffers {
+            let ratio = 16000.0 / sourceFormat.sampleRate
+            let capacity = AVAudioFrameCount(Double(buf.frameLength) * ratio + 512)
+            guard let outBuf = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { continue }
+            
+            var err: NSError?
+            let state = SupplyState()
+            converter.convert(to: outBuf, error: &err) { _, outStatus in
+                if !state.supplied {
+                    state.supplied = true
+                    outStatus.pointee = .haveData
+                    return buf
+                } else {
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+            }
+            
+            if err == nil && outBuf.frameLength > 0, let data = outBuf.floatChannelData?[0] {
+                let chunk = Array(UnsafeBufferPointer(start: data, count: Int(outBuf.frameLength)))
+                outputSamples.append(contentsOf: chunk)
+            }
+        }
+        
+        return outputSamples
     }
 }
 
@@ -87,32 +160,9 @@ public final class AudioCaptureService: ObservableObject {
     @Published public private(set) var rmsLevel: Float = 0.0
     @Published public private(set) var audioLevels: [Float] = Array(repeating: 0.05, count: 7)
     
-    private let audioEngine = AVAudioEngine()
-    private let accumulator = RawAudioAccumulator()
-    private var hasInstalledTap = false
-    private var inputFormat: AVAudioFormat?
-    private static weak var activeService: AudioCaptureService?
+    private let controller = AudioEngineController()
     
-    public init() {
-        NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange,
-            object: audioEngine,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleConfigurationChange()
-            }
-        }
-    }
-    
-    private func handleConfigurationChange() {
-        print("🔄 [AudioCaptureService] Audio engine configuration changed.")
-        if isRecording {
-            _ = stopRecording()
-        } else if isMonitoring {
-            stopMonitoring()
-        }
-    }
+    public init() {}
     
     public func requestPermission() async -> Bool {
         if #available(macOS 14.0, *) {
@@ -130,55 +180,27 @@ public final class AudioCaptureService: ObservableObject {
         guard !isRecording && !isMonitoring else { return }
         
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
-        guard status == .authorized else {
-            print("⚠️ [AudioCaptureService] Cannot start monitoring: mic permission not authorized (\(status.rawValue)).")
-            return
-        }
+        guard status == .authorized else { return }
         
-        AudioCaptureService.activeService = self
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.inputFormat(forBus: 0)
-        guard format.sampleRate > 0 else { return }
-        
-        if hasInstalledTap {
-            inputNode.removeTap(onBus: 0)
-            hasInstalledTap = false
-        }
-        
-        let handler = AudioTapHandler(accumulator: nil) { level, bands in
-            DispatchQueue.main.async {
-                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: level, bands: bands)
-            }
-        }
-        
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { (buffer, _) in
-            handler.handleBuffer(buffer)
-        }
-        
-        hasInstalledTap = true
         do {
-            audioEngine.prepare()
-            try audioEngine.start()
+            try controller.startMonitoring { [weak self] level, bands in
+                DispatchQueue.main.async {
+                    self?.updateLevels(level: level, bands: bands)
+                }
+            }
             self.isMonitoring = true
-            print("🎙️ [AudioCaptureService] Monitoring active (Settings mic test).")
+            print("🎙️ [AudioCaptureService] Monitoring active.")
         } catch {
-            print("⚠️ [AudioCaptureService] Failed to start monitoring: \(error)")
+            print("⚠️ [AudioCaptureService] Failed monitoring: \(error)")
         }
     }
     
     public func stopMonitoring() {
         guard isMonitoring else { return }
-        
-        if hasInstalledTap {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            hasInstalledTap = false
-        }
-        audioEngine.stop()
+        controller.stop()
         self.isMonitoring = false
         self.rmsLevel = 0.0
         self.audioLevels = Array(repeating: 0.05, count: 7)
-        AudioCaptureService.activeService = nil
-        print("🛑 [AudioCaptureService] Monitoring stopped.")
     }
     
     public func startRecording() throws {
@@ -187,119 +209,33 @@ public final class AudioCaptureService: ObservableObject {
         }
         guard !isRecording else { return }
         
-        _ = accumulator.drain()
-        AudioCaptureService.activeService = self
-        
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.inputFormat(forBus: 0)
-        
-        guard format.sampleRate > 0 else {
-            throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Недопустимая частота дискретизации микрофона"])
-        }
-        
-        self.inputFormat = format
-        
-        if hasInstalledTap {
-            inputNode.removeTap(onBus: 0)
-            hasInstalledTap = false
-        }
-        
-        let handler = AudioTapHandler(accumulator: self.accumulator) { level, bands in
+        try controller.startRecording { [weak self] level, bands in
             DispatchQueue.main.async {
-                AudioCaptureService.sharedAudioLevelUpdate(normalizedLevel: level, bands: bands)
+                self?.updateLevels(level: level, bands: bands)
             }
         }
-        
-        let bufferSize: AVAudioFrameCount = 2048
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { (buffer, _) in
-            handler.handleBuffer(buffer)
-        }
-        
-        hasInstalledTap = true
-        audioEngine.prepare()
-        try audioEngine.start()
         
         self.isRecording = true
         self.rmsLevel = 0.0
         self.audioLevels = Array(repeating: 0.05, count: 7)
-        print("🎙️ [AudioCaptureService] Recording started (format: \(format.sampleRate)Hz, \(format.channelCount)ch).")
-    }
-    
-    @MainActor
-    private static func sharedAudioLevelUpdate(normalizedLevel: Float, bands: [Float]) {
-        guard let service = activeService, (service.isRecording || service.isMonitoring) else { return }
-        service.rmsLevel = service.rmsLevel * 0.25 + normalizedLevel * 0.75
-        for i in 0..<7 {
-            service.audioLevels[i] = service.audioLevels[i] * 0.35 + bands[i] * 0.65
-        }
+        print("🎙️ [AudioCaptureService] Recording started.")
     }
     
     public func stopRecording() -> [Float] {
         guard isRecording else { return [] }
         
-        AudioCaptureService.activeService = nil
-        if hasInstalledTap {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            hasInstalledTap = false
-        }
-        audioEngine.stop()
-        
+        let samples = controller.drainSamplesConvertedTo16k()
         self.isRecording = false
         self.rmsLevel = 0.0
         self.audioLevels = Array(repeating: 0.05, count: 7)
-        
-        let rawBuffers = accumulator.drain()
-        guard let format = self.inputFormat, !rawBuffers.isEmpty else {
-            return []
-        }
-        
-        let converted = convertBuffersTo16kHzMono(buffers: rawBuffers, sourceFormat: format)
-        print("🛑 [AudioCaptureService] Recording stopped. Output 16kHz samples: \(converted.count) (\(String(format: "%.2f", Double(converted.count) / 16000.0))s).")
-        return converted
+        print("🛑 [AudioCaptureService] Recording stopped. Output \(samples.count) samples (16kHz).")
+        return samples
     }
     
-    private func convertBuffersTo16kHzMono(buffers: [AVAudioPCMBuffer], sourceFormat: AVAudioFormat) -> [Float] {
-        guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false) else {
-            return []
+    private func updateLevels(level: Float, bands: [Float]) {
+        self.rmsLevel = self.rmsLevel * 0.25 + level * 0.75
+        for i in 0..<7 {
+            self.audioLevels[i] = self.audioLevels[i] * 0.35 + bands[i] * 0.65
         }
-        
-        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
-            print("⚠️ [AudioCaptureService] Failed to create AVAudioConverter, fallback to direct mix.")
-            return []
-        }
-        
-        var outputSamples: [Float] = []
-        var bufferIndex = 0
-        
-        while bufferIndex < buffers.count {
-            let currentInput = buffers[bufferIndex]
-            let ratio = 16000.0 / sourceFormat.sampleRate
-            let outputCapacity = AVAudioFrameCount(Double(currentInput.frameLength) * ratio + 1024)
-            
-            guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputCapacity) else { break }
-            var error: NSError?
-            let state = ConverterState()
-            
-            converter.convert(to: outBuffer, error: &error) { _, outStatus in
-                if !state.hasSupplied {
-                    state.hasSupplied = true
-                    outStatus.pointee = .haveData
-                    return currentInput
-                } else {
-                    outStatus.pointee = .noDataNow
-                    return nil
-                }
-            }
-            
-            if error == nil && outBuffer.frameLength > 0, let data = outBuffer.floatChannelData?[0] {
-                let frameCount = Int(outBuffer.frameLength)
-                let chunk = Array(UnsafeBufferPointer(start: data, count: frameCount))
-                outputSamples.append(contentsOf: chunk)
-            }
-            
-            bufferIndex += 1
-        }
-        
-        return outputSamples
     }
 }
