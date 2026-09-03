@@ -7,7 +7,7 @@ public final class OverlayPanel: NSPanel {
     
     public init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 260, height: 70),
+            contentRect: NSRect(x: 0, y: 0, width: 280, height: 80),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -20,7 +20,7 @@ public final class OverlayPanel: NSPanel {
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
-        self.ignoresMouseEvents = false // Allows hover buttons and cancel/pause clicks!
+        self.ignoresMouseEvents = false
         self.alphaValue = 0.0
     }
     
@@ -32,6 +32,8 @@ public final class OverlayPanel: NSPanel {
         let hosting = NSHostingView(rootView: view)
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = .clear
+        // Crucial: do not allow SwiftUI size changes to resize the AppKit NSWindow!
+        hosting.sizingOptions = []
         self.contentView = hosting
         self.hostingView = hosting
     }
@@ -65,8 +67,8 @@ public final class OverlayPanel: NSPanel {
         guard let screen = targetScreen else { return }
         
         let screenRect = screen.visibleFrame
-        let width: CGFloat = 260
-        let height: CGFloat = 70
+        let width: CGFloat = 280
+        let height: CGFloat = 80
         
         let x = screenRect.origin.x + (screenRect.width - width) / 2.0
         let y = screenRect.origin.y + 65.0

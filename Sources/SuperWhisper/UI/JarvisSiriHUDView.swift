@@ -4,8 +4,8 @@ public struct JarvisSiriHUDView: View {
     @ObservedObject var appState: AppState
     @State private var isHovered = false
     
-    // Flat modern electric cyan
-    private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
+    // Flat electric cyan color
+    private let flatCyan = Color(red: 0.0, green: 0.86, blue: 1.0)
     
     public init(appState: AppState) {
         self.appState = appState
@@ -14,144 +14,185 @@ public struct JarvisSiriHUDView: View {
     public var body: some View {
         Group {
             if appState.hudState == .idle {
-                Color.clear.frame(width: 240, height: 60)
+                Color.clear.frame(width: 260, height: 70)
             } else {
-                capsuleContent
+                liquidGlassCapsule
             }
         }
     }
     
-    private var capsuleContent: some View {
+    // MARK: - Liquid Glass Capsule
+    private var liquidGlassCapsule: some View {
         ZStack {
-            // Dark glass capsule background
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(red: 0.05, green: 0.07, blue: 0.11).opacity(0.92))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(flatCyan.opacity(0.40), lineWidth: 1.2)
+            // 1. Frosted Liquid Glass Base
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color(red: 0.08, green: 0.12, blue: 0.18).opacity(0.65))
                 )
-                .shadow(color: Color.black.opacity(0.35), radius: 10, x: 0, y: 4)
+                // Specular Glass Rim (inner top light reflection)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.40),
+                                    Color.white.opacity(0.10),
+                                    Color.cyan.opacity(0.20)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.0
+                        )
+                )
+                // Liquid diffused floating shadow
+                .shadow(color: Color.black.opacity(0.28), radius: 14, x: 0, y: 7)
+                .shadow(color: flatCyan.opacity(0.12), radius: 8, x: 0, y: 2)
             
-            // Inside Content
+            // 2. Interactive Content Inside Glass
             Group {
                 switch appState.hudState {
                 case .listening:
                     if isHovered {
                         hoverControls
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     } else {
-                        equalizerAnimation
+                        equalizerView
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     }
                     
                 case .processing:
                     processingSpinner
                     
                 case .success:
-                    successCheckmark
+                    successView
                     
                 case .error(let msg):
                     Text(msg)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.red.opacity(0.9))
                         .lineLimit(1)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 14)
                     
                 case .idle:
                     EmptyView()
                 }
             }
         }
-        .frame(width: capsuleWidth, height: 36)
-        .padding(12)
+        .frame(width: capsuleWidth, height: 40)
+        .padding(14)
+        // Liquid organic spring animation for smooth expansion/contraction
+        .animation(.interactiveSpring(response: 0.36, dampingFraction: 0.74, blendDuration: 0.15), value: isHovered)
+        .animation(.interactiveSpring(response: 0.36, dampingFraction: 0.74, blendDuration: 0.15), value: appState.hudState)
         .onHover { hovering in
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                self.isHovered = hovering
-            }
+            self.isHovered = hovering
         }
     }
     
-    // MARK: - Equalizer (Live, Flat Cyan, Reactive to voice)
-    private var equalizerAnimation: some View {
+    // MARK: - Equalizer (Sensitive, Flat Cyan, No text)
+    private var equalizerView: some View {
         HStack(spacing: 3.5) {
             ForEach(0..<9, id: \.self) { i in
                 let level = CGFloat(appState.audioCapture.audioLevels[i])
-                let height = max(4, level * 22)
+                let height = max(4.0, level * 24.0)
                 
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(flatCyan)
-                    .frame(width: 3.0, height: height)
-                    .animation(.spring(response: 0.08, dampingFraction: 0.5), value: height)
+                    .frame(width: 3.2, height: height)
+                    .animation(.spring(response: 0.08, dampingFraction: 0.52), value: height)
             }
         }
-        .frame(height: 24)
+        .frame(height: 26)
     }
     
-    // MARK: - Hover Controls (Cancel ✕, Pause/Resume ⏸/▶, Done ✓)
+    // MARK: - Hover Controls (Larger icons with touch targets)
     private var hoverControls: some View {
-        HStack(spacing: 14) {
-            // Cancel button
+        HStack(spacing: 12) {
+            // Cancel Button (✕)
             Button(action: {
                 appState.cancelCurrentRecording()
             }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(.red.opacity(0.9))
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 26, height: 26)
+                    
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.red.opacity(0.9))
+                }
             }
             .buttonStyle(.plain)
             .help("Отменить запись")
             
-            // Pause / Resume button
+            // Pause / Resume Button (⏸ / ▶)
             Button(action: {
                 appState.togglePauseCurrentRecording()
             }) {
-                Image(systemName: appState.audioCapture.isPaused ? "play.circle.fill" : "pause.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(flatCyan)
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 26, height: 26)
+                    
+                    Image(systemName: appState.audioCapture.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(flatCyan)
+                }
             }
             .buttonStyle(.plain)
-            .help(appState.audioCapture.isPaused ? "Продолжить запись" : "Поставить на паузу")
+            .help(appState.audioCapture.isPaused ? "Продолжить запись" : "Пауза")
             
-            // Done / Transcribe button
+            // Done Button (✓)
             Button(action: {
                 appState.stopRecordingAndTranscribe()
             }) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(.green.opacity(0.9))
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 26, height: 26)
+                    
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.green.opacity(0.95))
+                }
             }
             .buttonStyle(.plain)
-            .help("Готово (распознать и вставить)")
+            .help("Готово (вставить)")
         }
+        .padding(.horizontal, 6)
     }
     
-    // MARK: - Processing Spinner (TimelineView guaranteed continuous spin)
+    // MARK: - Processing Spinner (Guaranteed continuous 60-120fps rotation)
     private var processingSpinner: some View {
         TimelineView(.animation) { timeline in
-            let date = timeline.date.timeIntervalSinceReferenceDate
-            let angle = (date * 360.0).truncatingRemainder(dividingBy: 360.0)
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            let angle = (time * 420.0).truncatingRemainder(dividingBy: 360.0)
             
             HStack(spacing: 8) {
                 Circle()
-                    .trim(from: 0.15, to: 0.85)
-                    .stroke(flatCyan, style: StrokeStyle(lineWidth: 2.0, lineCap: .round))
-                    .frame(width: 16, height: 16)
+                    .trim(from: 0.12, to: 0.88)
+                    .stroke(flatCyan, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .frame(width: 17, height: 17)
                     .rotationEffect(.degrees(angle))
                 
                 Text("Распознавание...")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(flatCyan)
             }
         }
     }
     
-    // MARK: - Success Checkmark
-    private var successCheckmark: some View {
+    // MARK: - Success View
+    private var successView: some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundColor(flatCyan)
             
             Text("Вставлено")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(flatCyan)
         }
     }
@@ -159,13 +200,13 @@ public struct JarvisSiriHUDView: View {
     private var capsuleWidth: CGFloat {
         switch appState.hudState {
         case .listening:
-            return isHovered ? 140 : 100
+            return isHovered ? 144 : 96
         case .processing:
-            return 140
+            return 146
         case .success:
-            return 110
+            return 116
         case .error:
-            return 160
+            return 164
         case .idle:
             return 80
         }

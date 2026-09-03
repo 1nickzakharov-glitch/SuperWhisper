@@ -27,15 +27,16 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            let level = min(max(rms * 9.0, 0.0), 1.0)
+            // Boosted logarithmic/sqrt response for natural speech sensitivity
+            let level = min(max(sqrt(rms * 40.0), 0.04), 1.0)
             
-            var bandLevels = [Float](repeating: 0.05, count: 9)
+            var bandLevels = [Float](repeating: 0.04, count: 9)
             let bandSize = frameLength / 9
             if bandSize > 0 {
                 for i in 0..<9 {
                     var bRms: Float = 0.0
                     vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
-                    bandLevels[i] = min(max(bRms * 12.0, 0.05), 1.0)
+                    bandLevels[i] = min(max(sqrt(bRms * 50.0), 0.04), 1.0)
                 }
             }
             
@@ -63,7 +64,6 @@ private final class AudioEngineController: @unchecked Sendable {
         self.inputFormat = format
         
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { @Sendable (buffer, time) in
-            // Only accumulate buffers if not paused
             if !self.isPaused {
                 if let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
                     copy.frameLength = buffer.frameLength
@@ -85,15 +85,16 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            let level = self.isPaused ? 0.02 : min(max(rms * 9.0, 0.0), 1.0)
+            // Boosted response: normal speech reaches 0.60..0.85
+            let level = self.isPaused ? 0.02 : min(max(sqrt(rms * 40.0), 0.04), 1.0)
             
-            var bandLevels = [Float](repeating: 0.05, count: 9)
+            var bandLevels = [Float](repeating: 0.04, count: 9)
             let bandSize = frameLength / 9
             if bandSize > 0 {
                 for i in 0..<9 {
                     var bRms: Float = 0.0
                     vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
-                    bandLevels[i] = self.isPaused ? 0.05 : min(max(bRms * 12.0, 0.05), 1.0)
+                    bandLevels[i] = self.isPaused ? 0.04 : min(max(sqrt(bRms * 50.0), 0.04), 1.0)
                 }
             }
             
@@ -162,7 +163,7 @@ public final class AudioCaptureService: ObservableObject {
     @Published public private(set) var isPaused = false
     @Published public private(set) var isMonitoring = false
     @Published public private(set) var rmsLevel: Float = 0.0
-    @Published public private(set) var audioLevels: [Float] = Array(repeating: 0.05, count: 9)
+    @Published public private(set) var audioLevels: [Float] = Array(repeating: 0.04, count: 9)
     
     private let controller = AudioEngineController()
     
@@ -210,7 +211,7 @@ public final class AudioCaptureService: ObservableObject {
         controller.stop()
         self.isMonitoring = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 9)
+        self.audioLevels = Array(repeating: 0.04, count: 9)
     }
     
     public func startRecording() throws {
@@ -228,7 +229,7 @@ public final class AudioCaptureService: ObservableObject {
         self.isRecording = true
         self.isPaused = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 9)
+        self.audioLevels = Array(repeating: 0.04, count: 9)
         print("🎙️ [AudioCaptureService] Recording started.")
     }
     
@@ -246,7 +247,7 @@ public final class AudioCaptureService: ObservableObject {
         self.isRecording = false
         self.isPaused = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 9)
+        self.audioLevels = Array(repeating: 0.04, count: 9)
         print("🛑 [AudioCaptureService] Recording stopped. Output \(samples.count) samples (16kHz).")
         return samples
     }
@@ -257,14 +258,14 @@ public final class AudioCaptureService: ObservableObject {
         self.isRecording = false
         self.isPaused = false
         self.rmsLevel = 0.0
-        self.audioLevels = Array(repeating: 0.05, count: 9)
+        self.audioLevels = Array(repeating: 0.04, count: 9)
         print("❌ [AudioCaptureService] Recording cancelled.")
     }
     
     private func updateLevels(level: Float, bands: [Float]) {
         self.rmsLevel = self.rmsLevel * 0.20 + level * 0.80
         for i in 0..<min(bands.count, self.audioLevels.count) {
-            self.audioLevels[i] = self.audioLevels[i] * 0.30 + bands[i] * 0.70
+            self.audioLevels[i] = self.audioLevels[i] * 0.25 + bands[i] * 0.75
         }
     }
 }
