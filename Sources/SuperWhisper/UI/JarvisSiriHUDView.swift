@@ -5,12 +5,13 @@ public struct JarvisSiriHUDView: View {
     
     @State private var rotationAngle: Double = 0
     
-    private let siriColors: [Color] = [
-        Color(red: 0.0, green: 0.95, blue: 1.0),   // Cyan
-        Color(red: 0.3, green: 0.4, blue: 1.0),    // Cobalt
-        Color(red: 0.7, green: 0.2, blue: 1.0),    // Purple
-        Color(red: 1.0, green: 0.2, blue: 0.6),    // Magenta
-        Color(red: 0.0, green: 0.95, blue: 1.0)
+    // Pure Electric Cyan & Deep Neon Blue palette (NO purple/magenta)
+    private let jarvisBlueColors: [Color] = [
+        Color(red: 0.0, green: 0.95, blue: 1.0),    // Electric Cyan
+        Color(red: 0.0, green: 0.65, blue: 1.0),    // Vibrant Azure
+        Color(red: 0.05, green: 0.35, blue: 0.95),  // Tech Blue
+        Color(red: 0.0, green: 0.75, blue: 1.0),    // Bright Cyan
+        Color(red: 0.0, green: 0.95, blue: 1.0)     // Loop to Cyan
     ]
     
     public init(appState: AppState) {
@@ -20,7 +21,7 @@ public struct JarvisSiriHUDView: View {
     public var body: some View {
         Group {
             if appState.hudState == .idle {
-                Color.clear.frame(width: 440, height: 130)
+                Color.clear.frame(width: 280, height: 80)
             } else {
                 activeHUDContent
             }
@@ -29,11 +30,11 @@ public struct JarvisSiriHUDView: View {
     
     private var activeHUDContent: some View {
         ZStack {
-            // 1. Ambient Siri Glow (outside capsule)
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
+            // 1. Ambient Electric Blue Glow
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(
                     AngularGradient(
-                        colors: siriColors,
+                        colors: jarvisBlueColors,
                         center: .center,
                         angle: .degrees(rotationAngle)
                     ),
@@ -43,195 +44,175 @@ public struct JarvisSiriHUDView: View {
                 .opacity(glowOpacity)
                 .scaleEffect(pillScale)
             
-            // 2. Glassmorphic Capsule Body
-            HStack(spacing: 16) {
-                jarvisCoreNode
+            // 2. Compact Glassmorphic Capsule (Height: 42pt, Width: 230pt)
+            HStack(spacing: 12) {
+                jarvisReactorNode
                 statusContentView
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .frame(minWidth: 280, maxWidth: 390, minHeight: 64, maxHeight: 64)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(width: 232, height: 42)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(Color.black.opacity(0.82))
+                    // Deep space blue glass
+                    RoundedRectangle(cornerRadius: 21, style: .continuous)
+                        .fill(Color(red: 0.03, green: 0.06, blue: 0.11).opacity(0.92))
                     
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    RoundedRectangle(cornerRadius: 21, style: .continuous)
                         .fill(.ultraThinMaterial)
                         .opacity(0.85)
                     
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    // Razor-thin sharp electric blue border
+                    RoundedRectangle(cornerRadius: 21, style: .continuous)
                         .stroke(
                             AngularGradient(
-                                colors: siriColors,
+                                colors: jarvisBlueColors,
                                 center: .center,
                                 angle: .degrees(rotationAngle)
                             ),
                             lineWidth: 1.2
                         )
-                        .opacity(0.85)
+                        .opacity(0.90)
                 }
             )
-            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .shadow(color: Color.black.opacity(0.45), radius: 22, x: 0, y: 10)
+            .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+            .shadow(color: Color.black.opacity(0.40), radius: 14, x: 0, y: 6)
         }
-        .padding(24)
+        .padding(18)
         .onAppear {
-            withAnimation(.linear(duration: 4.0).repeatForever(autoreverses: false)) {
+            withAnimation(.linear(duration: 3.5).repeatForever(autoreverses: false)) {
                 rotationAngle = 360
             }
         }
     }
     
     @ViewBuilder
-    private var jarvisCoreNode: some View {
+    private var jarvisReactorNode: some View {
         ZStack {
             switch appState.hudState {
             case .listening:
+                // Outer tech ring
                 Circle()
-                    .stroke(Color.cyan.opacity(0.3), lineWidth: 2)
-                    .frame(width: 32, height: 32)
+                    .stroke(Color.cyan.opacity(0.35), lineWidth: 1.5)
+                    .frame(width: 22, height: 22)
                 
+                // Rotating segment
                 Circle()
-                    .trim(from: 0.1, to: 0.9)
+                    .trim(from: 0.15, to: 0.85)
                     .stroke(
-                        AngularGradient(colors: [Color.cyan, Color.purple, Color.cyan], center: .center),
-                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                        Color.cyan,
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round)
                     )
                     .rotationEffect(.degrees(rotationAngle * 2.5))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 22, height: 22)
                 
+                // Pulsing voice core
                 Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.cyan, Color.blue.opacity(0.2)],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 16
-                        )
-                    )
+                    .fill(Color.cyan)
                     .frame(
-                        width: 14 + CGFloat(appState.audioCapture.rmsLevel * 16),
-                        height: 14 + CGFloat(appState.audioCapture.rmsLevel * 16)
+                        width: 7 + CGFloat(appState.audioCapture.rmsLevel * 10),
+                        height: 7 + CGFloat(appState.audioCapture.rmsLevel * 10)
                     )
+                    .shadow(color: Color.cyan, radius: 4)
                     .animation(.spring(response: 0.12, dampingFraction: 0.5), value: appState.audioCapture.rmsLevel)
                 
             case .processing:
+                // Fast spinning blue scanner ring
                 Circle()
-                    .stroke(Color.white.opacity(0.15), lineWidth: 2.5)
-                    .frame(width: 32, height: 32)
+                    .stroke(Color.cyan.opacity(0.2), lineWidth: 2)
+                    .frame(width: 22, height: 22)
                 
                 Circle()
                     .trim(from: 0.0, to: 0.6)
                     .stroke(
-                        AngularGradient(colors: [Color.cyan, Color.blue, Color.purple], center: .center),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        LinearGradient(colors: [Color.cyan, Color.blue], startPoint: .leading, endPoint: .trailing),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                     )
-                    .rotationEffect(.degrees(rotationAngle * 4))
-                    .frame(width: 32, height: 32)
+                    .rotationEffect(.degrees(rotationAngle * 4.5))
+                    .frame(width: 22, height: 22)
                 
             case .success:
                 Circle()
-                    .fill(Color.green.opacity(0.25))
-                    .frame(width: 32, height: 32)
+                    .fill(Color.cyan.opacity(0.2))
+                    .frame(width: 22, height: 22)
                 
                 Image(systemName: "checkmark")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.green)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.cyan)
                 
             case .error:
                 Circle()
-                    .fill(Color.red.opacity(0.25))
-                    .frame(width: 32, height: 32)
+                    .fill(Color.red.opacity(0.2))
+                    .frame(width: 22, height: 22)
                 
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .bold))
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.red)
                 
             case .idle:
                 EmptyView()
             }
         }
-        .frame(width: 34, height: 34)
+        .frame(width: 24, height: 24)
     }
     
     @ViewBuilder
     private var statusContentView: some View {
         switch appState.hudState {
         case .listening(let duration):
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Слушаю...")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                    
-                    Text(formatDuration(duration))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 3) {
-                    ForEach(0..<appState.audioCapture.audioLevels.count, id: \.self) { index in
-                        let level = index < appState.audioCapture.audioLevels.count ? CGFloat(appState.audioCapture.audioLevels[index]) : 0.1
-                        let barHeight = max(6, level * 28)
+            HStack(spacing: 8) {
+                // High-detail 11-bar electric equalizer
+                HStack(spacing: 2.5) {
+                    ForEach(0..<7, id: \.self) { i in
+                        let level = CGFloat(appState.audioCapture.audioLevels[i])
+                        let barHeight = max(4, level * 20)
                         
-                        RoundedRectangle(cornerRadius: 2)
+                        RoundedRectangle(cornerRadius: 1.5)
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color(red: 0.0, green: 0.9, blue: 1.0),
-                                        Color(red: 0.7, green: 0.3, blue: 1.0)
+                                        Color(red: 0.0, green: 0.50, blue: 1.0),
+                                        Color(red: 0.0, green: 0.95, blue: 1.0)
                                     ],
                                     startPoint: .bottom,
                                     endPoint: .top
                                 )
                             )
-                            .frame(width: 3.5, height: barHeight)
-                            .animation(.spring(response: 0.12, dampingFraction: 0.6), value: barHeight)
+                            .frame(width: 2.5, height: barHeight)
+                            .animation(.spring(response: 0.10, dampingFraction: 0.5), value: barHeight)
                     }
                 }
-                .frame(height: 28)
-            }
-            
-        case .processing:
-            HStack(spacing: 8) {
-                Text("Расшифровка...")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(.white)
+                .frame(height: 20)
                 
                 Spacer()
                 
-                Text("Large-v3-Turbo")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                // Clean duration timer
+                Text(formatDuration(duration))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundColor(.cyan.opacity(0.9))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.cyan.opacity(0.15))
-                    .cornerRadius(6)
             }
             
-        case .success(let text, let autoPasted):
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(autoPasted ? "Вставлено!" : "Скопировано в буфер (⌘V)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(autoPasted ? .green : .cyan)
-                    
-                    Text(text.prefix(32) + (text.count > 32 ? "..." : ""))
-                        .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundColor(.white.opacity(0.75))
-                        .lineLimit(1)
-                }
+        case .processing:
+            HStack(spacing: 6) {
+                Text("Распознавание...")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.cyan.opacity(0.9))
+                Spacer()
+            }
+            
+        case .success:
+            HStack(spacing: 6) {
+                Text("Вставлено!")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.cyan)
                 Spacer()
             }
             
         case .error(let msg):
             HStack {
                 Text(msg)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(.red.opacity(0.9))
                     .lineLimit(1)
                 Spacer()
@@ -245,9 +226,9 @@ public struct JarvisSiriHUDView: View {
     private var glowLineWidth: CGFloat {
         switch appState.hudState {
         case .listening:
-            return 4 + CGFloat(appState.audioCapture.rmsLevel * 8)
+            return 3 + CGFloat(appState.audioCapture.rmsLevel * 5)
         case .processing:
-            return 3
+            return 2.5
         case .success, .error:
             return 2
         case .idle:
@@ -258,11 +239,11 @@ public struct JarvisSiriHUDView: View {
     private var glowBlurRadius: CGFloat {
         switch appState.hudState {
         case .listening:
-            return 8 + CGFloat(appState.audioCapture.rmsLevel * 14)
+            return 6 + CGFloat(appState.audioCapture.rmsLevel * 8)
         case .processing:
-            return 10
+            return 8
         case .success, .error:
-            return 6
+            return 5
         case .idle:
             return 0
         }
@@ -284,7 +265,7 @@ public struct JarvisSiriHUDView: View {
     private var pillScale: CGFloat {
         switch appState.hudState {
         case .listening:
-            return 1.0 + CGFloat(appState.audioCapture.rmsLevel * 0.04)
+            return 1.0 + CGFloat(appState.audioCapture.rmsLevel * 0.02)
         default:
             return 1.0
         }
@@ -293,7 +274,6 @@ public struct JarvisSiriHUDView: View {
     private func formatDuration(_ duration: TimeInterval) -> String {
         let mins = Int(duration) / 60
         let secs = Int(duration) % 60
-        let tenths = Int((duration.truncatingRemainder(dividingBy: 1)) * 10)
-        return String(format: "%02d:%02d.%d", mins, secs, tenths)
+        return String(format: "%02d:%02d", mins, secs)
     }
 }

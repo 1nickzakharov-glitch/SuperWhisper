@@ -7,82 +7,68 @@ public final class AutoPasteService {
     
     private init() {}
     
+    @discardableResult
     public func paste(text: String, targetApp: NSRunningApplication?) -> Bool {
         guard !text.isEmpty else { return false }
         
+        // 1. Put text on clipboard
         let pasteboard = NSPasteboard.general
-        
-        // 1. Snapshot existing clipboard data to restore later
-        let previousItems: [[NSPasteboard.PasteboardType: Data]] = pasteboard.pasteboardItems?.compactMap { item in
-            var dict = [NSPasteboard.PasteboardType: Data]()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    dict[type] = data
-                }
-            }
-            return dict.isEmpty ? nil : dict
-        } ?? []
-        
-        // 2. Put text on clipboard
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         print("📋 [AutoPasteService] Set \(text.count) chars on pasteboard.")
         
-        // 3. Check accessibility permission
+        // 2. Check accessibility permissions
         let hasAccessibility = Self.checkAccessibilityPermissions(prompt: false)
         guard hasAccessibility else {
-            print("⚠️ [AutoPasteService] Accessibility not granted. Text remains in clipboard for manual paste.")
+            print("⚠️ [AutoPasteService] Accessibility not granted. Text is in clipboard for manual paste.")
             return false
         }
         
-        // 4. Activate target application
+        // 3. Reactivate target application
         if let target = targetApp, target.processIdentifier != NSRunningApplication.current.processIdentifier {
-            target.activate()
+            target.activate(options: [])
         }
         
-        // 5. Post synthetic Cmd+V event
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            self.simulatePasteKeystroke()
-            
-            // 6. Restore original clipboard content after application has consumed it
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                if !previousItems.isEmpty {
-                    pasteboard.clearContents()
-                    for dict in previousItems {
-                        let item = NSPasteboardItem()
-                        for (type, data) in dict {
-                            item.setData(data, forType: type)
-                        }
-                        pasteboard.writeObjects([item])
-                    }
-                    print("🔄 [AutoPasteService] Original clipboard restored.")
-                }
-            }
+        // 4. Dispatch synthetic Cmd+V with settling delay
+        let targetPid = targetApp?.processIdentifier
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            self.simulatePasteKeystroke(targetPid: targetPid)
         }
         
         return true
     }
     
-    private func simulatePasteKeystroke() {
+    private func simulatePasteKeystroke(targetPid: pid_t?) {
         let vKeyCode: CGKeyCode = 0x09 // Virtual key code for 'V'
         
-        guard let source = CGEventSource(stateID: .hidSystemState) else {
-            print("⚠️ [AutoPasteService] Cannot create CGEventSource.")
-            return
+        // Try CGEvent first
+        if let source = CGEventSource(stateID: .combinedSessionState),
+           let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+           let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) {
+            
+            keyDown.flags = .maskCommand
+            keyUp.flags = .maskCommand
+            
+            if let pid = targetPid {
+                keyDown.postToPid(pid)
+                keyUp.postToPid(pid)
+            }
+            keyDown.post(tap: .cghidEventTap)
+            keyUp.post(tap: .cghidEventTap)
+            print("🚀 [AutoPasteService] CGEvent Cmd+V dispatched.")
         }
         
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
-            print("⚠️ [AutoPasteService] Cannot create CGEvent for Cmd+V.")
-            return
+        // Secondary fallback via AppleScript System Events for apps that block raw CGEvent
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            let scriptSource = "tell application \"System Events\" to keystroke \"v\" using command down"
+            if let script = NSAppleScript(source: scriptSource) {
+                var err: NSDictionary?
+                script.executeAndReturnError(&err)
+                if err == nil {
+                    print("🚀 [AutoPasteService] AppleScript Cmd+V dispatched successfully.")
+                }
+            }
         }
-        
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
-        print("🚀 [AutoPasteService] Synthesized Cmd+V event dispatched.")
     }
     
     public static func checkAccessibilityPermissions(prompt: Bool = false) -> Bool {

@@ -6,6 +6,7 @@ public actor TranscriptionEngine {
     private var whisperKit: WhisperKit?
     private var isWarmedUp = false
     private let modelName: String
+    private var cachedPromptTokens: [Int]?
     
     public init(modelName: String = "openai_whisper-large-v3-v20240930_626MB") {
         self.modelName = modelName
@@ -21,7 +22,6 @@ public actor TranscriptionEngine {
             return modelFolder
         }
         
-        // Fallback: download if missing
         print("📥 [TranscriptionEngine] Downloading \(modelName)...")
         let downloadedFolder = try await WhisperKit.download(variant: modelName)
         return downloadedFolder
@@ -51,6 +51,13 @@ public actor TranscriptionEngine {
         
         let wk = try await WhisperKit(config)
         self.whisperKit = wk
+        
+        // Pre-encode conditioning prompt to force punctuation and capitalization in Russian
+        let punctuationPrompt = "Здравствуйте! Это пример русской речи: знаки препинания, запятые, точки, тире и вопросы всегда расставлены правильно."
+        if let tok = wk.tokenizer {
+            self.cachedPromptTokens = tok.encode(text: punctuationPrompt)
+        }
+        
         self.isWarmedUp = true
         print("✅ [TranscriptionEngine] Initialized successfully! Model: \(wk.modelVariant)")
     }
@@ -74,19 +81,22 @@ public actor TranscriptionEngine {
             language: language,
             temperature: 0.0,
             detectLanguage: language == nil,
+            promptTokens: self.cachedPromptTokens,
             chunkingStrategy: .vad
         )
         
         let results = try await whisperKit.transcribe(audioArray: audioSamples, decodeOptions: options)
         let duration = Date().timeIntervalSince(start)
         
-        let fullText = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        let cleaned = fullText
+        let rawJoined = results.map { $0.text }.joined(separator: " ")
+        let noTokens = rawJoined
             .replacingOccurrences(of: "<\\|.*?\\|>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
-        print("🎙️ [TranscriptionEngine] Transcribed \(audioSamples.count) samples in \(String(format: "%.2f", duration))s: \(cleaned)")
-        return cleaned
+        // Smart punctuation formatting
+        let formatted = TextPunctuationFormatter.format(noTokens)
+        
+        print("🎙️ [TranscriptionEngine] Transcribed in \(String(format: "%.2f", duration))s: \(formatted)")
+        return formatted
     }
 }

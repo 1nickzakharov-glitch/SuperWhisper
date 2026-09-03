@@ -7,7 +7,7 @@ public final class OverlayPanel: NSPanel {
     
     public init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 130),
+            contentRect: NSRect(x: 0, y: 0, width: 280, height: 80),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -16,22 +16,16 @@ public final class OverlayPanel: NSPanel {
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = false
-        // Level above full screen spaces and status bars
         self.level = NSWindow.Level(Int(CGWindowLevelForKey(.statusWindow)))
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
-        self.ignoresMouseEvents = true // Pass clicks through to active apps
+        self.ignoresMouseEvents = true
         self.alphaValue = 0.0
     }
     
-    public override var canBecomeKey: Bool {
-        return false
-    }
-    
-    public override var canBecomeMain: Bool {
-        return false
-    }
+    public override var canBecomeKey: Bool { return false }
+    public override var canBecomeMain: Bool { return false }
     
     public func setupHUD(appState: AppState) {
         let view = JarvisSiriHUDView(appState: appState)
@@ -46,7 +40,7 @@ public final class OverlayPanel: NSPanel {
         repositionOnScreen()
         self.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+            context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().alphaValue = 1.0
         }
@@ -54,7 +48,7 @@ public final class OverlayPanel: NSPanel {
     
     public func hideHUD(completion: (@Sendable @MainActor () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.22
+            context.duration = 0.20
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0.0
         }, completionHandler: {
@@ -71,12 +65,12 @@ public final class OverlayPanel: NSPanel {
         guard let screen = targetScreen else { return }
         
         let screenRect = screen.visibleFrame
-        let width: CGFloat = 440
-        let height: CGFloat = 130
+        let width: CGFloat = 280
+        let height: CGFloat = 80
         
-        // Position at bottom center of the active screen
+        // Position at bottom center (70pt above dock)
         let x = screenRect.origin.x + (screenRect.width - width) / 2.0
-        let y = screenRect.origin.y + 85.0
+        let y = screenRect.origin.y + 70.0
         
         self.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     }
