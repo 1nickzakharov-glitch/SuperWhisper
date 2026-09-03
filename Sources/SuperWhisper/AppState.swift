@@ -37,7 +37,7 @@ public final class AppState: ObservableObject {
                 try await self.transcriptionEngine.initialize()
                 await MainActor.run {
                     self.isEngineReady = true
-                    self.engineStatusMessage = "Готов к диктовке (⌥ Space)"
+                    self.engineStatusMessage = "Готов к работе (\(Preferences.shared.hotkeyPreset.shortTitle))"
                     print("✨ [AppState] Engine prewarmed and ready.")
                 }
             } catch {
@@ -67,6 +67,10 @@ public final class AppState: ObservableObject {
         // Capture currently active app before anything else
         self.targetApplication = NSWorkspace.shared.frontmostApplication
         print("🎯 [AppState] Target application captured: \(self.targetApplication?.localizedName ?? "Unknown")")
+        
+        if Preferences.shared.soundFeedback {
+            NSSound(named: "Pop")?.play()
+        }
         
         Task {
             let hasMicPermission = await audioCapture.requestPermission()
@@ -101,12 +105,16 @@ public final class AppState: ObservableObject {
             return
         }
         
+        if Preferences.shared.soundFeedback {
+            NSSound(named: "Blow")?.play()
+        }
+        
         self.hudState = .processing
         
         Task {
             do {
-                // Runs purely on the background actor, zero UI lag
-                let text = try await self.transcriptionEngine.transcribe(audioSamples: audioSamples)
+                let preferredLang = Preferences.shared.language == "auto" ? nil : Preferences.shared.language
+                let text = try await self.transcriptionEngine.transcribe(audioSamples: audioSamples, language: preferredLang)
                 
                 if text.isEmpty {
                     self.hudState = .error(message: "Речь не распознана")

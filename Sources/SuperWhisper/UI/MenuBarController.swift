@@ -50,6 +50,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(NSMenuItem.separator())
         
         // 3. Hotkey Toggle Action
+        let shortcutTitle = Preferences.shared.hotkeyPreset.shortTitle
         let toggleTitle: String
         switch appState.hudState {
         case .listening:
@@ -57,26 +58,33 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         case .processing:
             toggleTitle = "⏳ Идёт распознавание..."
         default:
-            toggleTitle = "🎙️ Начать диктовку (⌥ Space)"
+            toggleTitle = "🎙️ Начать диктовку (\(shortcutTitle))"
         }
         
-        let toggleItem = NSMenuItem(title: toggleTitle, action: #selector(toggleDictation), keyEquivalent: " ")
-        toggleItem.keyEquivalentModifierMask = .option
+        let toggleItem = NSMenuItem(title: toggleTitle, action: #selector(toggleDictation), keyEquivalent: "")
         toggleItem.target = self
         statusMenu.addItem(toggleItem)
         
         statusMenu.addItem(NSMenuItem.separator())
         
-        // 4. Permissions check
+        // 4. Settings
+        let settingsItem = NSMenuItem(title: "Настройки...", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.keyEquivalentModifierMask = .command
+        settingsItem.target = self
+        statusMenu.addItem(settingsItem)
+        
+        statusMenu.addItem(NSMenuItem.separator())
+        
+        // 5. Permissions check
         let isAxGranted = AutoPasteService.checkAccessibilityPermissions(prompt: false)
-        let axTitle = isAxGranted ? "✓ Универсальный доступ: разрешён" : "⚠️ Универсальный доступ: требуется (для авто-вставки)"
+        let axTitle = isAxGranted ? "✓ Универсальный доступ: разрешён" : "⚠️ Универсальный доступ: требуется для вставки"
         let axItem = NSMenuItem(title: axTitle, action: #selector(requestAccessibilityPermission), keyEquivalent: "")
         axItem.target = self
         statusMenu.addItem(axItem)
         
         statusMenu.addItem(NSMenuItem.separator())
         
-        // 5. Quit
+        // 6. Quit
         let quitItem = NSMenuItem(title: "Завершить SuperWhisper", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.keyEquivalentModifierMask = .command
         quitItem.target = self
@@ -85,6 +93,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     @objc private func toggleDictation() {
         appState.toggleRecording()
+    }
+    
+    @objc private func openSettings() {
+        SettingsWindowController.shared.showSettings()
     }
     
     @objc private func requestAccessibilityPermission() {

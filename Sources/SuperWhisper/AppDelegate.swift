@@ -8,14 +8,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 [AppDelegate] SuperWhisper launching...")
         
-        // Hide dock icon to run smoothly as a menu bar / background utility
+        // Run smoothly as a menu bar utility
         NSApp.setActivationPolicy(.accessory)
         
         // Initialize Menu Bar UI
         menuBarController = MenuBarController(appState: appState)
         
-        // Register Global Hotkey (Option + Space)
-        HotkeyService.shared.registerGlobalHotkey { [weak self] in
+        // Start Hotkey Listener
+        HotkeyService.shared.startListening { [weak self] in
             Task { @MainActor in
                 self?.appState.toggleRecording()
             }
@@ -24,7 +24,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start background prewarm of WhisperKit model
         appState.startEnginePrewarm()
         
-        print("✅ [AppDelegate] SuperWhisper ready. Press Option + Space to dictate.")
+        // On first run, open settings to welcome the user
+        if !Preferences.shared.hasCompletedOnboarding {
+            Preferences.shared.hasCompletedOnboarding = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                SettingsWindowController.shared.showSettings()
+            }
+        }
+        
+        print("✅ [AppDelegate] SuperWhisper ready. Hotkey: \(Preferences.shared.hotkeyPreset.title).")
     }
     
     public func applicationWillTerminate(_ notification: Notification) {

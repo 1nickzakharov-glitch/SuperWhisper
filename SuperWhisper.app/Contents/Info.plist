@@ -4,6 +4,10 @@
 <dict>
     <key>CFBundleExecutable</key>
     <string>SuperWhisper</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.nickzakharov.superwhisper</string>
     <key>CFBundleName</key>
@@ -21,10 +25,10 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>SuperWhisper необходим доступ к микрофону для диктовки текста.</string>
+    <string>SuperWhisper необходим доступ к микрофону для надиктовки текста.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>SuperWhisper распознает речь локально с помощью модели Whisper Large-v3-Turbo.</string>
+    <string>SuperWhisper распознает речь локально с помощью нейросети Whisper Large-v3-Turbo.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>SuperWhisper использует системный доступ для автоматической вставки надиктованного текста.</string>
+    <string>SuperWhisper использует универсальный доступ для автоматической вставки надиктованного текста.</string>
 </dict>
 </plist>
