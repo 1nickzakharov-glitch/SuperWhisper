@@ -15,23 +15,16 @@ public final class AutoPasteService {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        print("📋 [AutoPasteService] Set \(text.count) chars on pasteboard.")
+        print("📋 [AutoPasteService] Set \(text.count) chars on pasteboard: '\(text)'")
         
-        // 2. Check accessibility permissions
-        let hasAccessibility = Self.checkAccessibilityPermissions(prompt: false)
-        guard hasAccessibility else {
-            print("⚠️ [AutoPasteService] Accessibility not granted. Text is in clipboard for manual paste.")
-            return false
-        }
-        
-        // 3. Reactivate target application
+        // 2. Reactivate target application if specified
         if let target = targetApp, target.processIdentifier != NSRunningApplication.current.processIdentifier {
-            target.activate(options: [])
+            target.activate(options: .activateAllWindows)
         }
         
-        // 4. Dispatch synthetic Cmd+V with settling delay
+        // 3. Dispatch simulated paste with settling delay
         let targetPid = targetApp?.processIdentifier
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
             self.simulatePasteKeystroke(targetPid: targetPid)
         }
         
@@ -39,33 +32,34 @@ public final class AutoPasteService {
     }
     
     private func simulatePasteKeystroke(targetPid: pid_t?) {
-        let vKeyCode: CGKeyCode = 0x09 // Virtual key code for 'V'
+        let source = CGEventSource(stateID: .hidSystemState)
+        let commandKey: CGKeyCode = 0x37 // Virtual keycode for Command
+        let vKey: CGKeyCode = 0x09       // Virtual keycode for V (layout-independent)
         
-        // Try CGEvent first
-        if let source = CGEventSource(stateID: .combinedSessionState),
-           let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-           let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) {
+        // Post full 4-event sequence (Command Down -> V Down -> V Up -> Command Up)
+        if let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: commandKey, keyDown: true),
+           let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+           let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false),
+           let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: commandKey, keyDown: false) {
             
-            keyDown.flags = .maskCommand
-            keyUp.flags = .maskCommand
+            vDown.flags = .maskCommand
+            vUp.flags = .maskCommand
             
-            if let pid = targetPid {
-                keyDown.postToPid(pid)
-                keyUp.postToPid(pid)
-            }
-            keyDown.post(tap: .cghidEventTap)
-            keyUp.post(tap: .cghidEventTap)
-            print("🚀 [AutoPasteService] CGEvent Cmd+V dispatched.")
+            cmdDown.post(tap: .cghidEventTap)
+            vDown.post(tap: .cghidEventTap)
+            vUp.post(tap: .cghidEventTap)
+            cmdUp.post(tap: .cghidEventTap)
+            print("🚀 [AutoPasteService] CGEvent 4-step Cmd+V dispatched.")
         }
         
-        // Secondary fallback via AppleScript System Events for apps that block raw CGEvent
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        // AppleScript fallback after brief tick for Electron / web apps
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
             let scriptSource = "tell application \"System Events\" to keystroke \"v\" using command down"
             if let script = NSAppleScript(source: scriptSource) {
                 var err: NSDictionary?
                 script.executeAndReturnError(&err)
                 if err == nil {
-                    print("🚀 [AutoPasteService] AppleScript Cmd+V dispatched successfully.")
+                    print("🚀 [AutoPasteService] AppleScript System Events keystroke dispatched.")
                 }
             }
         }

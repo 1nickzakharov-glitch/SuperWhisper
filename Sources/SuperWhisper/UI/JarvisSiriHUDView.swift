@@ -1,11 +1,46 @@
 import SwiftUI
 
-public struct JarvisSiriHUDView: View {
-    @ObservedObject var appState: AppState
+// Dedicated interactive button with explicit hover feedback (lighting up & scaling)
+struct HoverActionButton: View {
+    let icon: String
+    let baseColor: Color
+    let activeColor: Color
+    let helpText: String
+    let action: () -> Void
+    
     @State private var isHovered = false
     
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(isHovered ? Color.white.opacity(0.24) : Color.white.opacity(0.08))
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Circle()
+                            .stroke(isHovered ? activeColor.opacity(0.85) : Color.clear, lineWidth: 1.2)
+                    )
+                
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(isHovered ? activeColor : baseColor)
+            }
+            .scaleEffect(isHovered ? 1.14 : 1.0)
+            .shadow(color: isHovered ? activeColor.opacity(0.4) : Color.clear, radius: 6)
+            .animation(.interactiveSpring(response: 0.20, dampingFraction: 0.65), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { h in self.isHovered = h }
+        .help(helpText)
+    }
+}
+
+public struct JarvisSiriHUDView: View {
+    @ObservedObject var appState: AppState
+    @State private var isPillHovered = false
+    
     // Flat electric cyan color
-    private let flatCyan = Color(red: 0.0, green: 0.86, blue: 1.0)
+    private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
     
     public init(appState: AppState) {
         self.appState = appState
@@ -29,7 +64,7 @@ public struct JarvisSiriHUDView: View {
                 .fill(.ultraThinMaterial)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(Color(red: 0.08, green: 0.12, blue: 0.18).opacity(0.65))
+                        .fill(Color(red: 0.06, green: 0.09, blue: 0.15).opacity(0.68))
                 )
                 // Specular Glass Rim (inner top light reflection)
                 .overlay(
@@ -37,9 +72,9 @@ public struct JarvisSiriHUDView: View {
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.40),
-                                    Color.white.opacity(0.10),
-                                    Color.cyan.opacity(0.20)
+                                    Color.white.opacity(0.42),
+                                    Color.white.opacity(0.12),
+                                    flatCyan.opacity(0.20)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -47,17 +82,17 @@ public struct JarvisSiriHUDView: View {
                             lineWidth: 1.0
                         )
                 )
-                // Liquid diffused floating shadow
-                .shadow(color: Color.black.opacity(0.28), radius: 14, x: 0, y: 7)
-                .shadow(color: flatCyan.opacity(0.12), radius: 8, x: 0, y: 2)
+                // Soft diffused floating shadow
+                .shadow(color: Color.black.opacity(0.25), radius: 14, x: 0, y: 7)
+                .shadow(color: flatCyan.opacity(0.10), radius: 6, x: 0, y: 2)
             
             // 2. Interactive Content Inside Glass
             Group {
                 switch appState.hudState {
                 case .listening:
-                    if isHovered {
+                    if isPillHovered {
                         hoverControls
-                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                            .transition(.opacity.combined(with: .scale(scale: 0.90)))
                     } else {
                         equalizerView
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -72,7 +107,7 @@ public struct JarvisSiriHUDView: View {
                 case .error(let msg):
                     Text(msg)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.red.opacity(0.9))
+                        .foregroundColor(.red.opacity(0.95))
                         .lineLimit(1)
                         .padding(.horizontal, 14)
                     
@@ -83,88 +118,72 @@ public struct JarvisSiriHUDView: View {
         }
         .frame(width: capsuleWidth, height: 40)
         .padding(14)
-        // Liquid organic spring animation for smooth expansion/contraction
-        .animation(.interactiveSpring(response: 0.36, dampingFraction: 0.74, blendDuration: 0.15), value: isHovered)
-        .animation(.interactiveSpring(response: 0.36, dampingFraction: 0.74, blendDuration: 0.15), value: appState.hudState)
+        .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.15), value: isPillHovered)
+        .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.15), value: appState.hudState)
         .onHover { hovering in
-            self.isHovered = hovering
+            self.isPillHovered = hovering
         }
     }
     
-    // MARK: - Equalizer (Sensitive, Flat Cyan, No text)
+    // MARK: - 120 FPS Fluid FFT Equalizer (Real frequency bands, organic breathing)
     private var equalizerView: some View {
-        HStack(spacing: 3.5) {
-            ForEach(0..<9, id: \.self) { i in
-                let level = CGFloat(appState.audioCapture.audioLevels[i])
-                let height = max(4.0, level * 24.0)
-                
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(flatCyan)
-                    .frame(width: 3.2, height: height)
-                    .animation(.spring(response: 0.08, dampingFraction: 0.52), value: height)
+        TimelineView(.animation) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            
+            HStack(spacing: 3.5) {
+                ForEach(0..<9, id: \.self) { i in
+                    let fftLevel = CGFloat(appState.audioCapture.audioLevels[i])
+                    // Subtle organic breathing wave in silence so it never looks dead
+                    let idleBreath = 4.0 + sin(time * 3.2 + Double(i) * 0.6) * 1.5
+                    let activeHeight = fftLevel * 25.0
+                    let barHeight = max(idleBreath, activeHeight)
+                    
+                    RoundedRectangle(cornerRadius: 1.6)
+                        .fill(flatCyan)
+                        .frame(width: 3.2, height: barHeight)
+                }
             }
+            .frame(height: 26)
         }
-        .frame(height: 26)
     }
     
-    // MARK: - Hover Controls (Larger icons with touch targets)
+    // MARK: - Hover Controls (Cancel ✕, Pause/Resume ⏸/▶, Done ✓ with hover states)
     private var hoverControls: some View {
         HStack(spacing: 12) {
-            // Cancel Button (✕)
-            Button(action: {
+            // Cancel Button
+            HoverActionButton(
+                icon: "xmark",
+                baseColor: .red.opacity(0.85),
+                activeColor: .red,
+                helpText: "Отменить запись"
+            ) {
                 appState.cancelCurrentRecording()
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 26, height: 26)
-                    
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.red.opacity(0.9))
-                }
             }
-            .buttonStyle(.plain)
-            .help("Отменить запись")
             
-            // Pause / Resume Button (⏸ / ▶)
-            Button(action: {
+            // Pause / Resume Button
+            HoverActionButton(
+                icon: appState.audioCapture.isPaused ? "play.fill" : "pause.fill",
+                baseColor: flatCyan.opacity(0.9),
+                activeColor: flatCyan,
+                helpText: appState.audioCapture.isPaused ? "Продолжить" : "Пауза"
+            ) {
                 appState.togglePauseCurrentRecording()
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 26, height: 26)
-                    
-                    Image(systemName: appState.audioCapture.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(flatCyan)
-                }
             }
-            .buttonStyle(.plain)
-            .help(appState.audioCapture.isPaused ? "Продолжить запись" : "Пауза")
             
-            // Done Button (✓)
-            Button(action: {
+            // Done Button
+            HoverActionButton(
+                icon: "checkmark",
+                baseColor: .green.opacity(0.85),
+                activeColor: .green,
+                helpText: "Готово (вставить)"
+            ) {
                 appState.stopRecordingAndTranscribe()
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 26, height: 26)
-                    
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.green.opacity(0.95))
-                }
             }
-            .buttonStyle(.plain)
-            .help("Готово (вставить)")
         }
         .padding(.horizontal, 6)
     }
     
-    // MARK: - Processing Spinner (Guaranteed continuous 60-120fps rotation)
+    // MARK: - Processing Spinner (Continuous 120fps rotation)
     private var processingSpinner: some View {
         TimelineView(.animation) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
@@ -200,11 +219,11 @@ public struct JarvisSiriHUDView: View {
     private var capsuleWidth: CGFloat {
         switch appState.hudState {
         case .listening:
-            return isHovered ? 144 : 96
+            return isPillHovered ? 148 : 98
         case .processing:
-            return 146
+            return 148
         case .success:
-            return 116
+            return 118
         case .error:
             return 164
         case .idle:

@@ -21,7 +21,7 @@ public enum TextPunctuationFormatter {
             text = first.uppercased() + text.dropFirst()
         }
         
-        // Capitalize letter after period, exclamation mark, or question mark followed by space
+        // Capitalize letter after period, exclamation mark, or question mark
         let patterns = [
             ("(\\.\\s+)([a-zа-яё])", 2),
             ("(!\\s+)([a-zа-яё])", 2),
@@ -33,8 +33,8 @@ public enum TextPunctuationFormatter {
                 let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
                 for match in matches.reversed() {
                     if let range = Range(match.range(at: 2), in: text) {
-                        let lower = String(text[range])
-                        text.replaceSubrange(range, with: lower.uppercased())
+                        let lowerChar = String(text[range])
+                        text.replaceSubrange(range, with: lowerChar.uppercased())
                     }
                 }
             }

@@ -60,7 +60,7 @@ public final class AppState: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    self.engineStatusMessage = "Ошибка инициализации модели: \(error.localizedDescription)"
+                    self.engineStatusMessage = "Ошибка инициализации: \(error.localizedDescription)"
                     print("❌ [AppState] Prewarm failed: \(error)")
                 }
             }
@@ -82,6 +82,7 @@ public final class AppState: ObservableObject {
     public func startRecording() {
         cancelPendingDismissal()
         
+        // Capture active application BEFORE showing overlay
         self.targetApplication = NSWorkspace.shared.frontmostApplication
         print("🎯 [AppState] Target application captured: \(self.targetApplication?.localizedName ?? "Unknown")")
         
@@ -153,9 +154,19 @@ public final class AppState: ObservableObject {
                     return
                 }
                 
-                let didAutoPaste = AutoPasteService.shared.paste(text: text, targetApp: self.targetApplication)
-                self.hudState = .success(text: text, autoPasted: didAutoPaste)
-                self.scheduleHUDDismissal(after: didAutoPaste ? 1.4 : 2.2)
+                // Show success confirmation on the HUD for 0.4s
+                self.hudState = .success(text: text, autoPasted: true)
+                
+                // Hide HUD first so target application gains full window & cursor focus!
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+                    self.overlayPanel.hideHUD {
+                        Task { @MainActor in
+                            self.hudState = .idle
+                            // Paste text directly into the now-active target text field
+                            AutoPasteService.shared.paste(text: text, targetApp: self.targetApplication)
+                        }
+                    }
+                }
             } catch {
                 self.hudState = .error(message: "Ошибка распознавания: \(error.localizedDescription)")
                 self.scheduleHUDDismissal(after: 3.0)

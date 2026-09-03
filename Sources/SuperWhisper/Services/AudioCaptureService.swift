@@ -2,13 +2,88 @@ import Foundation
 @preconcurrency import AVFoundation
 import Accelerate
 
+private final class FFTAnalyzer: @unchecked Sendable {
+    private let fftSize = 1024
+    private var window: [Float]
+    private var fft: vDSP.FFT<DSPSplitComplex>?
+    
+    init() {
+        var w = [Float](repeating: 0.0, count: 1024)
+        vDSP_hann_window(&w, vDSP_Length(1024), Int32(vDSP_HANN_NORM))
+        self.window = w
+        self.fft = vDSP.FFT(log2n: vDSP_Length(10), radix: .radix2, ofType: DSPSplitComplex.self)
+    }
+    
+    func computeBands(samples: [Float], sampleRate: Double) -> [Float] {
+        guard samples.count >= fftSize, let fft = self.fft else {
+            return Array(repeating: 0.04, count: 9)
+        }
+        
+        var windowed = [Float](repeating: 0.0, count: fftSize)
+        vDSP_vmul(Array(samples.prefix(fftSize)), 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
+        
+        var real = [Float](repeating: 0.0, count: fftSize / 2)
+        var imag = [Float](repeating: 0.0, count: fftSize / 2)
+        var resultBands = [Float](repeating: 0.04, count: 9)
+        
+        real.withUnsafeMutableBufferPointer { rPtr in
+            imag.withUnsafeMutableBufferPointer { iPtr in
+                var split = DSPSplitComplex(realp: rPtr.baseAddress!, imagp: iPtr.baseAddress!)
+                windowed.withUnsafeBufferPointer { wPtr in
+                    wPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { cPtr in
+                        vDSP_ctoz(cPtr, 2, &split, 1, vDSP_Length(fftSize / 2))
+                    }
+                }
+                fft.forward(input: split, output: &split)
+                
+                var mags = [Float](repeating: 0.0, count: fftSize / 2)
+                vDSP_zvabs(&split, 1, &mags, 1, vDSP_Length(fftSize / 2))
+                
+                let binHz = sampleRate / Double(fftSize)
+                let edges: [(Double, Double)] = [
+                    (100, 250), (250, 480), (480, 800), (800, 1300),
+                    (1300, 2200), (2200, 3500), (3500, 5000), (5000, 7500), (7500, 11000)
+                ]
+                
+                for (i, edge) in edges.enumerated() {
+                    let b0 = max(1, Int(edge.0 / binHz))
+                    let b1 = min(fftSize / 2 - 1, Int(edge.1 / binHz))
+                    if b1 >= b0 {
+                        var sum: Float = 0.0
+                        for b in b0...b1 { sum += mags[b] }
+                        let avg = sum / Float(b1 - b0 + 1)
+                        resultBands[i] = min(max(sqrt(avg * 0.18), 0.04), 1.0)
+                    }
+                }
+            }
+        }
+        
+        return resultBands
+    }
+}
+
 private final class AudioEngineController: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var hasInstalledTap = false
-    private let lock = NSLock()
+    private let bufferLock = NSLock()
     private var capturedBuffers: [AVAudioPCMBuffer] = []
     private var inputFormat: AVAudioFormat?
-    public var isPaused = false
+    private let fftAnalyzer = FFTAnalyzer()
+    
+    private let pauseLock = NSLock()
+    private var _isPaused = false
+    public var isPaused: Bool {
+        get {
+            pauseLock.lock()
+            defer { pauseLock.unlock() }
+            return _isPaused
+        }
+        set {
+            pauseLock.lock()
+            _isPaused = newValue
+            pauseLock.unlock()
+        }
+    }
     
     func startMonitoring(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
         stop()
@@ -19,6 +94,8 @@ private final class AudioEngineController: @unchecked Sendable {
             throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
         self.inputFormat = format
+        let sr = format.sampleRate
+        let analyzer = self.fftAnalyzer
         
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable (buffer, time) in
             guard let channelData = buffer.floatChannelData?[0] else { return }
@@ -27,18 +104,10 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            // Boosted logarithmic/sqrt response for natural speech sensitivity
-            let level = min(max(sqrt(rms * 40.0), 0.04), 1.0)
+            let level = min(max(sqrt(rms * 35.0), 0.04), 1.0)
             
-            var bandLevels = [Float](repeating: 0.04, count: 9)
-            let bandSize = frameLength / 9
-            if bandSize > 0 {
-                for i in 0..<9 {
-                    var bRms: Float = 0.0
-                    vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
-                    bandLevels[i] = min(max(sqrt(bRms * 50.0), 0.04), 1.0)
-                }
-            }
+            let rawSamples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
+            let bandLevels = analyzer.computeBands(samples: rawSamples, sampleRate: sr)
             
             onLevelUpdate(level, bandLevels)
         }
@@ -51,10 +120,10 @@ private final class AudioEngineController: @unchecked Sendable {
     func startRecording(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
         stop()
         
-        lock.lock()
+        bufferLock.lock()
         capturedBuffers.removeAll(keepingCapacity: true)
-        isPaused = false
-        lock.unlock()
+        bufferLock.unlock()
+        self.isPaused = false
         
         let inputNode = engine.inputNode
         let format = inputNode.inputFormat(forBus: 0)
@@ -62,9 +131,14 @@ private final class AudioEngineController: @unchecked Sendable {
             throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
         self.inputFormat = format
+        let sr = format.sampleRate
+        let analyzer = self.fftAnalyzer
         
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { @Sendable (buffer, time) in
-            if !self.isPaused {
+            
+            let currentlyPaused = self.isPaused
+            
+            if !currentlyPaused {
                 if let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
                     copy.frameLength = buffer.frameLength
                     let chCount = Int(buffer.format.channelCount)
@@ -73,9 +147,9 @@ private final class AudioEngineController: @unchecked Sendable {
                             memcpy(dst, src, Int(buffer.frameLength) * MemoryLayout<Float>.size)
                         }
                     }
-                    self.lock.lock()
+                    self.bufferLock.lock()
                     self.capturedBuffers.append(copy)
-                    self.lock.unlock()
+                    self.bufferLock.unlock()
                 }
             }
             
@@ -85,17 +159,14 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            // Boosted response: normal speech reaches 0.60..0.85
-            let level = self.isPaused ? 0.02 : min(max(sqrt(rms * 40.0), 0.04), 1.0)
+            let level = currentlyPaused ? 0.02 : min(max(sqrt(rms * 35.0), 0.04), 1.0)
             
-            var bandLevels = [Float](repeating: 0.04, count: 9)
-            let bandSize = frameLength / 9
-            if bandSize > 0 {
-                for i in 0..<9 {
-                    var bRms: Float = 0.0
-                    vDSP_rmsqv(channelData.advanced(by: i * bandSize), 1, &bRms, vDSP_Length(bandSize))
-                    bandLevels[i] = self.isPaused ? 0.04 : min(max(sqrt(bRms * 50.0), 0.04), 1.0)
-                }
+            let rawSamples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
+            let bandLevels: [Float]
+            if currentlyPaused {
+                bandLevels = Array(repeating: 0.04, count: 9)
+            } else {
+                bandLevels = analyzer.computeBands(samples: rawSamples, sampleRate: sr)
             }
             
             onLevelUpdate(level, bandLevels)
@@ -117,10 +188,10 @@ private final class AudioEngineController: @unchecked Sendable {
     func drainSamplesConvertedTo16k() -> [Float] {
         stop()
         
-        lock.lock()
+        bufferLock.lock()
         let buffers = capturedBuffers
         capturedBuffers.removeAll(keepingCapacity: true)
-        lock.unlock()
+        bufferLock.unlock()
         
         guard let sourceFormat = inputFormat, !buffers.isEmpty else { return [] }
         guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false) else { return [] }
@@ -190,7 +261,6 @@ public final class AudioCaptureService: ObservableObject {
     
     public func startMonitoring() {
         guard !isRecording && !isMonitoring else { return }
-        
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { return }
         
@@ -263,9 +333,9 @@ public final class AudioCaptureService: ObservableObject {
     }
     
     private func updateLevels(level: Float, bands: [Float]) {
-        self.rmsLevel = self.rmsLevel * 0.20 + level * 0.80
+        self.rmsLevel = self.rmsLevel * 0.15 + level * 0.85
         for i in 0..<min(bands.count, self.audioLevels.count) {
-            self.audioLevels[i] = self.audioLevels[i] * 0.25 + bands[i] * 0.75
+            self.audioLevels[i] = self.audioLevels[i] * 0.20 + bands[i] * 0.80
         }
     }
 }
