@@ -57,6 +57,7 @@ public struct SettingsView: View {
     @State private var keyMonitor: Any?
     @State private var modelTestResult: String?
     @State private var isTestingModel = false
+    @State private var smoothedMicRMS: CGFloat = 0.04
     
     let timer = Timer.publish(every: 0.8, on: .main, in: .common).autoconnect()
     
@@ -185,7 +186,7 @@ public struct SettingsView: View {
         .formStyle(.grouped)
     }
     
-    // MARK: - Audio Tab
+    // MARK: - Audio Tab (Liquid Smooth VU Meter at 120 FPS)
     private var audioTab: some View {
         Form {
             Section {
@@ -204,43 +205,43 @@ public struct SettingsView: View {
                         }
                     }
                     
+                    // 120 FPS Smooth VU-meter line
                     VStack(spacing: 8) {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.secondary.opacity(0.18))
-                                
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [.cyan, .blue, .purple],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
+                        TimelineView(.animation) { _ in
+                            let target = CGFloat(appState.audioCapture.rmsLevel)
+                            let glided = smoothedMicRMS * 0.80 + target * 0.20
+                            
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.secondary.opacity(0.18))
+                                    
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [.cyan, .blue],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
                                         )
-                                    )
-                                    .frame(width: geo.size.width * CGFloat(min(max(appState.audioCapture.rmsLevel * 2.2, 0.04), 1.0)))
-                                    .animation(.spring(response: 0.1, dampingFraction: 0.55), value: appState.audioCapture.rmsLevel)
+                                        .frame(width: geo.size.width * min(max(glided * 1.8, 0.04), 1.0))
+                                }
                             }
+                            .frame(height: 16)
+                            .onAppear { smoothedMicRMS = glided }
+                            .onChange(of: glided) { _, newVal in smoothedMicRMS = newVal }
                         }
                         .frame(height: 16)
                         
-                        HStack(spacing: 6) {
-                            ForEach(0..<appState.audioCapture.audioLevels.count, id: \.self) { i in
-                                let h = max(4, CGFloat(appState.audioCapture.audioLevels[i]) * 24)
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.accentColor.opacity(0.85))
-                                    .frame(width: 8, height: h)
-                                    .animation(.spring(response: 0.1, dampingFraction: 0.5), value: h)
-                            }
-                            Spacer()
-                            Text("Уровень RMS: \(Int(appState.audioCapture.rmsLevel * 100))%")
+                        HStack {
+                            Text("Уровень чувствительности: \(Int(smoothedMicRMS * 100))%")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
+                            Spacer()
                         }
-                        .frame(height: 24)
                     }
                     
-                    Text("Столбики и шкала реагируют на громкость речи в реальном времени.")
+                    Text("Шкала плавно реагирует на громкость голоса без задержек.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -275,30 +276,39 @@ public struct SettingsView: View {
                     }
                 }
                 
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Универсальный доступ:")
-                            .font(.system(size: 13))
-                        Text("Необходим для автоматической вставки в активное окно")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    if appState.isAccessibilityGranted {
-                        HStack(spacing: 5) {
-                            Circle().fill(Color.green).frame(width: 7, height: 7)
-                            Text("Разрешён")
-                                .font(.system(size: 12, weight: .medium))
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Универсальный доступ:")
+                                .font(.system(size: 13))
+                            Text("Необходим для авто-вставки текста в активное окно")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                    } else {
-                        Button("Выдать доступ в Настройках") {
-                            _ = AutoPasteService.checkAccessibilityPermissions(prompt: true)
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                NSWorkspace.shared.open(url)
+                        Spacer()
+                        if appState.isAccessibilityGranted {
+                            HStack(spacing: 5) {
+                                Circle().fill(Color.green).frame(width: 7, height: 7)
+                                Text("Разрешён")
+                                    .font(.system(size: 12, weight: .medium))
                             }
+                        } else {
+                            Button("Открыть Системные настройки") {
+                                _ = AutoPasteService.checkAccessibilityPermissions(prompt: true)
+                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    }
+                    
+                    if !appState.isAccessibilityGranted {
+                        Text("Совет: если тумблер в Настройках уже включен, выключите и включите его снова один раз, чтобы система привязала разрешение к новому сертификату разработчика.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                            .padding(.top, 2)
                     }
                 }
             } header: {
@@ -339,7 +349,7 @@ public struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("OpenAI Whisper Large-v3-Turbo")
                         .font(.headline)
-                    Text("Модель CoreML с ускорением на Apple Neural Engine")
+                    Text("Модель CoreML с ускорением на видеочипе (GPU/Metal)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -351,8 +361,8 @@ public struct SettingsView: View {
             
             VStack(spacing: 10) {
                 infoRow(label: "Размер модели:", value: "598 МБ (локально)")
-                infoRow(label: "Аппаратный движок:", value: "Apple Neural Engine (ANE) + GPU")
-                infoRow(label: "Скорость распознавания:", value: "0.14x (в 7 раз быстрее речи)")
+                infoRow(label: "Аппаратный движок:", value: "Apple Silicon GPU (Metal) + CPU")
+                infoRow(label: "Скорость распознавания:", value: "0.33x (20 сек речи за 6.6 сек)")
                 infoRow(label: "Детектор пауз (VAD):", value: "Voice Activity Detection активен")
                 infoRow(label: "Конфиденциальность:", value: "100% On-Device (без интернета)")
             }
@@ -418,7 +428,7 @@ public struct SettingsView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-            Text("Персональная умная диктовка с интерфейсом Siri + Jarvis и локальной нейросетью Whisper Large-v3-Turbo.")
+            Text("Персональная умная диктовка с интерфейсом Liquid Glass и локальной нейросетью Whisper Large-v3-Turbo.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -460,7 +470,6 @@ public struct SettingsView: View {
             let keyCode = UInt32(event.keyCode)
             let flags = event.modifierFlags
             
-            // Ignore bare modifier key presses
             if keyCode == 54 || keyCode == 55 || keyCode == 56 || keyCode == 58 || keyCode == 59 || keyCode == 60 || keyCode == 61 || keyCode == 62 {
                 return nil
             }

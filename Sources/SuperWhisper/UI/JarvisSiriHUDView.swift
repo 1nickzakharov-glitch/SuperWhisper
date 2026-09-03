@@ -13,7 +13,7 @@ struct HoverActionButton: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(isHovered ? Color.white.opacity(0.30) : Color.white.opacity(0.10))
+                    .fill(isHovered ? Color.white.opacity(0.32) : Color.white.opacity(0.10))
                     .frame(width: 28, height: 28)
                     .overlay(
                         Circle()
@@ -45,9 +45,12 @@ public struct JarvisSiriHUDView: View {
     @ObservedObject var appState: AppState
     @State private var isPillHovered = false
     
+    // Smooth 120 FPS continuous bar heights
+    @State private var currentHeights: [CGFloat] = Array(repeating: 4.0, count: 9)
+    
     // Flat modern electric cyan
     private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
-    // Symmetrical centered band layout: center has highest voice energy, flanked by sides
+    // Symmetrical centered frequency index mapping: core speech formants in center
     private let symmetricIndices = [7, 5, 3, 1, 0, 2, 4, 6, 8]
     
     public init(appState: AppState) {
@@ -133,7 +136,7 @@ public struct JarvisSiriHUDView: View {
         }
     }
     
-    // MARK: - Symmetrical Centered 120 FPS Liquid Equalizer
+    // MARK: - Symmetrical Centered 120 FPS Liquid Equalizer (Continuous Glide Interpolation)
     private var centeredEqualizerView: some View {
         TimelineView(.animation) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
@@ -141,16 +144,26 @@ public struct JarvisSiriHUDView: View {
             HStack(spacing: 3.6) {
                 ForEach(0..<9, id: \.self) { i in
                     let bandIdx = symmetricIndices[i]
-                    let bandLevel = CGFloat(appState.audioCapture.audioLevels[bandIdx])
+                    let targetLevel = CGFloat(appState.audioCapture.audioLevels[bandIdx])
+                    let targetHeight = max(4.0, targetLevel * 24.0)
                     
-                    // Smooth idle breathing wave when silent so bars never look static
-                    let idleBreath = 4.0 + sin(time * 2.8 + Double(i) * 0.45) * 1.3
-                    let speechHeight = bandLevel * 24.0
-                    let barHeight = max(idleBreath, speechHeight)
+                    // Smooth per-frame glide interpolation
+                    let current = currentHeights[i]
+                    let glided = current * 0.78 + targetHeight * 0.22
+                    
+                    // Subtle organic breathing wave in silence so bars never look dead
+                    let idleBreath = 4.0 + sin(time * 2.8 + Double(i) * 0.45) * 1.2
+                    let barHeight = max(idleBreath, glided)
                     
                     RoundedRectangle(cornerRadius: 1.6)
                         .fill(flatCyan)
                         .frame(width: 3.2, height: barHeight)
+                        .onAppear {
+                            currentHeights[i] = barHeight
+                        }
+                        .onChange(of: glided) { _, newVal in
+                            currentHeights[i] = newVal
+                        }
                 }
             }
             .frame(height: 26)
