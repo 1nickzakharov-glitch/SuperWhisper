@@ -6,3 +6,4 @@ DerivedData/
 .DS_Store
 Models/
 *.bin
+SuperWhisper.app/Contents/MacOS/
