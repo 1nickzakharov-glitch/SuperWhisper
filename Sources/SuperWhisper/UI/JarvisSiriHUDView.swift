@@ -133,24 +133,25 @@ public struct JarvisSiriHUDView: View {
         }
     }
     
-    // MARK: - Symmetrical Centered 120 FPS Liquid Equalizer
+    // MARK: - Symmetrical Centered 60 FPS Liquid Equalizer
     private var centeredEqualizerView: some View {
-        TimelineView(.animation) { timeline in
+        TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             
             HStack(spacing: 3.6) {
                 ForEach(0..<9, id: \.self) { i in
                     let bandIdx = symmetricIndices[i]
                     let targetLevel = CGFloat(appState.audioCapture.audioLevels[bandIdx])
-                    let targetHeight = max(4.0, targetLevel * 24.0)
+                    let voiceHeight = targetLevel * 24.0
                     
                     // Subtle organic breathing wave in silence so bars never look dead
-                    let idleBreath = 4.0 + sin(time * 2.8 + Double(i) * 0.45) * 1.2
-                    let barHeight = max(idleBreath, targetHeight)
+                    // Phase offset across bands creates an undulating, breathing water-wave effect
+                    let idleBreath = 4.0 + sin(time * 2.4 + Double(i) * 0.55) * 1.2
+                    let barHeight = max(idleBreath, voiceHeight)
                     
                     RoundedRectangle(cornerRadius: 1.6)
                         .fill(flatCyan)
-                        .frame(width: 3.2, height: barHeight)
+                        .frame(width: 3.2, height: min(25.0, barHeight))
                 }
             }
             .frame(height: 26)
@@ -193,11 +194,11 @@ public struct JarvisSiriHUDView: View {
         .padding(.horizontal, 6)
     }
     
-    // MARK: - Processing Spinner (Continuous 120fps rotation)
+    // MARK: - Processing Spinner (Smooth 60fps rotation)
     private var processingSpinner: some View {
-        TimelineView(.animation) { timeline in
+        TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
-            let angle = (time * 420.0).truncatingRemainder(dividingBy: 360.0)
+            let angle = (time * 360.0).truncatingRemainder(dividingBy: 360.0)
             
             HStack(spacing: 8) {
                 Circle()

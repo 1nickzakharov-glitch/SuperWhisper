@@ -40,11 +40,21 @@ private final class FFTAnalyzer: @unchecked Sendable {
                 vDSP_zvabs(&split, 1, &mags, 1, vDSP_Length(fftSize / 2))
                 
                 let binHz = sampleRate / Double(fftSize)
-                // 9 balanced bands covering the human speech range with equalized perception
+                // 9 balanced acoustic speech bands covering the vocal formant landscape:
                 let edges: [(Double, Double)] = [
-                    (100, 220), (220, 380), (380, 600), (600, 950),
-                    (950, 1500), (1500, 2300), (2300, 3400), (3400, 4800), (4800, 6500)
+                    (100, 240),   // Band 0: Fundamental vocal pitch & chest resonance
+                    (240, 420),   // Band 1: Body resonance, male vowels
+                    (420, 680),   // Band 2: First formant (F1) for open vowels /a/, /o/
+                    (680, 1050),  // Band 3: Vowel formant bridge & nasal consonants /m/, /n/
+                    (1050, 1600), // Band 4: Second formant (F2) for front vowels /e/, /i/
+                    (1600, 2400), // Band 5: Vocal projection & intelligibility
+                    (2400, 3600), // Band 6: Consonant bursts (/t/, /k/, /p/) & clarity
+                    (3600, 5000), // Band 7: Fricatives (/sh/, /ch/, /z/)
+                    (5000, 7500)  // Band 8: Sibilants (/s/, /ts/) and high-frequency air
                 ]
+                
+                // Natural speech energy falloff compensation (Pink Noise +3.5dB/octave slope)
+                let spectralWeights: [Float] = [0.75, 0.95, 1.35, 1.85, 2.6, 3.7, 5.0, 6.8, 8.8]
                 
                 for (i, edge) in edges.enumerated() {
                     let b0 = max(1, Int(edge.0 / binHz))
@@ -53,9 +63,17 @@ private final class FFTAnalyzer: @unchecked Sendable {
                         var sum: Float = 0.0
                         for b in b0...b1 { sum += mags[b] }
                         let avg = sum / Float(b1 - b0 + 1)
-                        // Frequency tilt gain: boosts higher harmonics proportionally
-                        let tiltGain: Float = 0.14 + Float(i) * 0.05
-                        resultBands[i] = min(max(sqrt(avg * tiltGain), 0.04), 1.0)
+                        let weighted = avg * spectralWeights[i]
+                        
+                        // Convert to logarithmic decibel scale (-50dB to -12dB range)
+                        // This guarantees quiet voice lifts the bars nicely while loud voice doesn't clip
+                        let clampedVal = max(weighted, 0.00001)
+                        let db = 20.0 * log10(clampedVal)
+                        let normalized = (db + 48.0) / 38.0
+                        
+                        // Non-linear power curve for organic visual dynamics: expands differences between bands
+                        let curved = pow(max(0.0, min(1.0, normalized)), 1.25)
+                        resultBands[i] = max(0.04, min(1.0, curved))
                     }
                 }
             }
@@ -369,17 +387,25 @@ public final class AudioCaptureService: ObservableObject {
         print("❌ [AudioCaptureService] Recording cancelled.")
     }
     
-    // Smooth symmetrical attack & decay: eliminates micro-jitter while keeping speech response vivid
+    // Smooth asymmetrical attack & decay with peak lingering:
+    // - Snappy attack: lifts quickly on speech onset without abrupt jumping
+    // - Fluid graceful decay: peaks float and glide down organically instead of collapsing
     private func updateLevels(level: Float, bands: [Float]) {
-        self.rmsLevel = self.rmsLevel * 0.70 + level * 0.30
+        // RMS level smoothing
+        if level > self.rmsLevel {
+            self.rmsLevel = self.rmsLevel * 0.40 + level * 0.60
+        } else {
+            self.rmsLevel = self.rmsLevel * 0.88 + level * 0.12
+        }
+        
         for i in 0..<min(bands.count, self.audioLevels.count) {
             let target = bands[i]
             if target > self.audioLevels[i] {
-                // Smooth rise
-                self.audioLevels[i] = self.audioLevels[i] * 0.70 + target * 0.30
+                // Responsive attack on speech syllables
+                self.audioLevels[i] = self.audioLevels[i] * 0.35 + target * 0.65
             } else {
-                // Smooth decay
-                self.audioLevels[i] = self.audioLevels[i] * 0.80 + target * 0.20
+                // Fluid lingering decay: smooth natural glide down
+                self.audioLevels[i] = self.audioLevels[i] * 0.88 + target * 0.12
             }
         }
     }
