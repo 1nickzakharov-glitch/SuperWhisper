@@ -47,8 +47,12 @@ public struct JarvisSiriHUDView: View {
     
     // Flat modern electric cyan
     private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
-    // Symmetrical centered frequency index mapping: core speech formants in center
-    private let symmetricIndices = [7, 5, 3, 1, 0, 2, 4, 6, 8]
+    // Symmetrical bell curve envelope: creates the natural voice dome in the center
+    private let domeEnvelope: [CGFloat] = [0.22, 0.46, 0.72, 0.92, 1.00, 0.92, 0.72, 0.46, 0.22]
+    
+    // Alternating contrast multipliers: ensures neighboring bars alternate in height
+    // so it never looks like a flat, uniform wall of bars
+    private let alternatingSteps: [CGFloat] = [0.85, 1.15, 0.78, 1.12, 1.00, 1.12, 0.78, 1.15, 0.85]
     
     public init(appState: AppState) {
         self.appState = appState
@@ -137,21 +141,31 @@ public struct JarvisSiriHUDView: View {
     private var centeredEqualizerView: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
+            let volume = CGFloat(appState.audioCapture.rmsLevel)
             
             HStack(spacing: 3.6) {
                 ForEach(0..<9, id: \.self) { i in
-                    let bandIdx = symmetricIndices[i]
-                    let targetLevel = CGFloat(appState.audioCapture.audioLevels[bandIdx])
-                    let voiceHeight = targetLevel * 24.0
+                    let dist = abs(CGFloat(i) - 4.0)
                     
-                    // Subtle organic breathing wave in silence so bars never look dead
-                    // Phase offset across bands creates an undulating, breathing water-wave effect
-                    let idleBreath = 4.0 + sin(time * 2.4 + Double(i) * 0.55) * 1.2
-                    let barHeight = max(idleBreath, voiceHeight)
+                    // 1. Idle breathing wave: gentle undulating ripple in silence
+                    let idleWave = 3.8 + sin(time * 2.2 + Double(i) * 0.75) * 1.1
+                    
+                    // 2. Dynamic voice wave:
+                    // - Traveling wave moving outward from center
+                    // - Secondary vocal texture harmonic
+                    let waveTravel = sin(time * 6.2 - Double(dist) * 1.0)
+                    let waveTexture = cos(time * 9.8 + Double(i) * 1.5)
+                    let dynamicMod = 0.62 + 0.38 * (waveTravel * 0.65 + waveTexture * 0.35)
+                    
+                    // 3. Voice height with dome shape and alternating step contrast
+                    let voiceHeight = volume * 20.5 * domeEnvelope[i] * alternatingSteps[i] * CGFloat(dynamicMod)
+                    
+                    // 4. Final bar height (between 3.8px and 25.0px)
+                    let barHeight = min(25.0, max(CGFloat(idleWave), 3.8 + voiceHeight))
                     
                     RoundedRectangle(cornerRadius: 1.6)
                         .fill(flatCyan)
-                        .frame(width: 3.2, height: min(25.0, barHeight))
+                        .frame(width: 3.2, height: barHeight)
                 }
             }
             .frame(height: 26)

@@ -2,94 +2,12 @@ import Foundation
 @preconcurrency import AVFoundation
 import Accelerate
 
-private final class FFTAnalyzer: @unchecked Sendable {
-    private let fftSize = 1024
-    private var window: [Float]
-    private var fft: vDSP.FFT<DSPSplitComplex>?
-    
-    init() {
-        var w = [Float](repeating: 0.0, count: 1024)
-        vDSP_hann_window(&w, vDSP_Length(1024), Int32(vDSP_HANN_NORM))
-        self.window = w
-        self.fft = vDSP.FFT(log2n: vDSP_Length(10), radix: .radix2, ofType: DSPSplitComplex.self)
-    }
-    
-    func computeBands(samples: [Float], sampleRate: Double) -> [Float] {
-        guard samples.count >= fftSize, let fft = self.fft else {
-            return Array(repeating: 0.04, count: 9)
-        }
-        
-        var windowed = [Float](repeating: 0.0, count: fftSize)
-        vDSP_vmul(Array(samples.prefix(fftSize)), 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
-        
-        var real = [Float](repeating: 0.0, count: fftSize / 2)
-        var imag = [Float](repeating: 0.0, count: fftSize / 2)
-        var resultBands = [Float](repeating: 0.04, count: 9)
-        
-        real.withUnsafeMutableBufferPointer { rPtr in
-            imag.withUnsafeMutableBufferPointer { iPtr in
-                var split = DSPSplitComplex(realp: rPtr.baseAddress!, imagp: iPtr.baseAddress!)
-                windowed.withUnsafeBufferPointer { wPtr in
-                    wPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { cPtr in
-                        vDSP_ctoz(cPtr, 2, &split, 1, vDSP_Length(fftSize / 2))
-                    }
-                }
-                fft.forward(input: split, output: &split)
-                
-                var mags = [Float](repeating: 0.0, count: fftSize / 2)
-                vDSP_zvabs(&split, 1, &mags, 1, vDSP_Length(fftSize / 2))
-                
-                let binHz = sampleRate / Double(fftSize)
-                // 9 balanced acoustic speech bands covering the vocal formant landscape:
-                let edges: [(Double, Double)] = [
-                    (100, 240),   // Band 0: Fundamental vocal pitch & chest resonance
-                    (240, 420),   // Band 1: Body resonance, male vowels
-                    (420, 680),   // Band 2: First formant (F1) for open vowels /a/, /o/
-                    (680, 1050),  // Band 3: Vowel formant bridge & nasal consonants /m/, /n/
-                    (1050, 1600), // Band 4: Second formant (F2) for front vowels /e/, /i/
-                    (1600, 2400), // Band 5: Vocal projection & intelligibility
-                    (2400, 3600), // Band 6: Consonant bursts (/t/, /k/, /p/) & clarity
-                    (3600, 5000), // Band 7: Fricatives (/sh/, /ch/, /z/)
-                    (5000, 7500)  // Band 8: Sibilants (/s/, /ts/) and high-frequency air
-                ]
-                
-                // Natural speech energy falloff compensation (Pink Noise +3.5dB/octave slope)
-                let spectralWeights: [Float] = [0.75, 0.95, 1.35, 1.85, 2.6, 3.7, 5.0, 6.8, 8.8]
-                
-                for (i, edge) in edges.enumerated() {
-                    let b0 = max(1, Int(edge.0 / binHz))
-                    let b1 = min(fftSize / 2 - 1, Int(edge.1 / binHz))
-                    if b1 >= b0 {
-                        var sum: Float = 0.0
-                        for b in b0...b1 { sum += mags[b] }
-                        let avg = sum / Float(b1 - b0 + 1)
-                        let weighted = avg * spectralWeights[i]
-                        
-                        // Convert to logarithmic decibel scale (-50dB to -12dB range)
-                        // This guarantees quiet voice lifts the bars nicely while loud voice doesn't clip
-                        let clampedVal = max(weighted, 0.00001)
-                        let db = 20.0 * log10(clampedVal)
-                        let normalized = (db + 48.0) / 38.0
-                        
-                        // Non-linear power curve for organic visual dynamics: expands differences between bands
-                        let curved = pow(max(0.0, min(1.0, normalized)), 1.25)
-                        resultBands[i] = max(0.04, min(1.0, curved))
-                    }
-                }
-            }
-        }
-        
-        return resultBands
-    }
-}
-
 private final class AudioEngineController: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var hasInstalledTap = false
     private let bufferLock = NSLock()
     private var recordedMonoSamples: [Float] = []
     private var inputSampleRate: Double = 48000.0
-    private let fftAnalyzer = FFTAnalyzer()
     
     private let pauseLock = NSLock()
     private var _isPaused = false
@@ -106,7 +24,7 @@ private final class AudioEngineController: @unchecked Sendable {
         }
     }
     
-    func startMonitoring(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
+    func startMonitoring(onLevelUpdate: @escaping @Sendable (Float) -> Void) throws {
         stop()
         
         let inputNode = engine.inputNode
@@ -115,8 +33,6 @@ private final class AudioEngineController: @unchecked Sendable {
             throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
         self.inputSampleRate = format.sampleRate
-        let sr = format.sampleRate
-        let analyzer = self.fftAnalyzer
         
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable (buffer, time) in
             guard let channelData = buffer.floatChannelData?[0] else { return }
@@ -125,12 +41,13 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
-            let level = min(max(sqrt(rms * 28.0), 0.04), 1.0)
             
-            let rawSamples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
-            let bandLevels = analyzer.computeBands(samples: rawSamples, sampleRate: sr)
+            // Logarithmic decibel scaling: maps whisper to loud voice into 0.0...1.0
+            let db = 20.0 * log10(max(rms, 0.00005))
+            let normalized = max(0.0, min(1.0, (db + 44.0) / 32.0))
+            let level = pow(normalized, 1.2)
             
-            onLevelUpdate(level, bandLevels)
+            onLevelUpdate(level)
         }
         
         hasInstalledTap = true
@@ -138,7 +55,7 @@ private final class AudioEngineController: @unchecked Sendable {
         try engine.start()
     }
     
-    func startRecording(onLevelUpdate: @escaping @Sendable (Float, [Float]) -> Void) throws {
+    func startRecording(onLevelUpdate: @escaping @Sendable (Float) -> Void) throws {
         stop()
         
         bufferLock.lock()
@@ -152,8 +69,6 @@ private final class AudioEngineController: @unchecked Sendable {
             throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
         self.inputSampleRate = format.sampleRate
-        let sr = format.sampleRate
-        let analyzer = self.fftAnalyzer
         let chCount = Int(format.channelCount)
         
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { @Sendable (buffer, time) in
@@ -185,17 +100,11 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData[0], 1, &rms, vDSP_Length(frameLength))
-            let level = currentlyPaused ? 0.02 : min(max(sqrt(rms * 28.0), 0.04), 1.0)
+            let db = 20.0 * log10(max(rms, 0.00005))
+            let normalized = max(0.0, min(1.0, (db + 44.0) / 32.0))
+            let level = currentlyPaused ? 0.0 : pow(normalized, 1.2)
             
-            let rawSamples = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
-            let bandLevels: [Float]
-            if currentlyPaused {
-                bandLevels = Array(repeating: 0.04, count: 9)
-            } else {
-                bandLevels = analyzer.computeBands(samples: rawSamples, sampleRate: sr)
-            }
-            
-            onLevelUpdate(level, bandLevels)
+            onLevelUpdate(level)
         }
         
         hasInstalledTap = true
@@ -304,9 +213,9 @@ public final class AudioCaptureService: ObservableObject {
         guard status == .authorized else { return }
         
         do {
-            try controller.startMonitoring { [weak self] level, bands in
+            try controller.startMonitoring { [weak self] level in
                 DispatchQueue.main.async {
-                    self?.updateLevels(level: level, bands: bands)
+                    self?.updateLevels(level: level)
                 }
             }
             self.isMonitoring = true
@@ -329,9 +238,9 @@ public final class AudioCaptureService: ObservableObject {
         }
         guard !isRecording else { return }
         
-        try controller.startRecording { [weak self] level, bands in
+        try controller.startRecording { [weak self] level in
             DispatchQueue.main.async {
-                self?.updateLevels(level: level, bands: bands)
+                self?.updateLevels(level: level)
             }
         }
         
@@ -390,23 +299,13 @@ public final class AudioCaptureService: ObservableObject {
     // Smooth asymmetrical attack & decay with peak lingering:
     // - Snappy attack: lifts quickly on speech onset without abrupt jumping
     // - Fluid graceful decay: peaks float and glide down organically instead of collapsing
-    private func updateLevels(level: Float, bands: [Float]) {
-        // RMS level smoothing
+    private func updateLevels(level: Float) {
         if level > self.rmsLevel {
-            self.rmsLevel = self.rmsLevel * 0.40 + level * 0.60
+            // Responsive attack on speech syllables
+            self.rmsLevel = self.rmsLevel * 0.35 + level * 0.65
         } else {
+            // Fluid lingering decay: smooth natural glide down
             self.rmsLevel = self.rmsLevel * 0.88 + level * 0.12
-        }
-        
-        for i in 0..<min(bands.count, self.audioLevels.count) {
-            let target = bands[i]
-            if target > self.audioLevels[i] {
-                // Responsive attack on speech syllables
-                self.audioLevels[i] = self.audioLevels[i] * 0.35 + target * 0.65
-            } else {
-                // Fluid lingering decay: smooth natural glide down
-                self.audioLevels[i] = self.audioLevels[i] * 0.88 + target * 0.12
-            }
         }
     }
 }
