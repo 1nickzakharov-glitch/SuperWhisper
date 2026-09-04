@@ -152,7 +152,7 @@ public actor TranscriptionEngine {
                 if !clean.isEmpty { validTextParts.append(clean) }
             } else {
                 for seg in res.segments {
-                    if seg.noSpeechProb < 0.75 {
+                    if seg.noSpeechProb < 0.88 {
                         let clean = seg.text.replacingOccurrences(of: "<\\|.*?\\|>", with: "", options: .regularExpression)
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                         if !clean.isEmpty { validTextParts.append(clean) }
@@ -168,12 +168,13 @@ public actor TranscriptionEngine {
     }
     
     private func trimTrailingSilence(_ samples: [Float]) -> [Float] {
-        guard samples.count > 1600 else { return samples } // Keep short audio
+        // Keep full audio if shorter than 2.5 seconds (prevents cutting short voice clips)
+        guard samples.count > 40000 else { return samples }
         
         let windowSize = 800 // 50ms at 16kHz
         var endIndex = samples.count
         
-        // Search backwards from end for speech energy (RMS > 0.006)
+        // Search backwards from end for speech energy (true silence threshold: RMS > 0.0018)
         while endIndex > windowSize {
             let start = endIndex - windowSize
             var sumSquares: Float = 0.0
@@ -181,9 +182,10 @@ public actor TranscriptionEngine {
                 sumSquares += samples[i] * samples[i]
             }
             let rms = sqrt(sumSquares / Float(windowSize))
-            if rms > 0.006 {
-                // Keep 300ms buffer after last sound so endings aren't clipped
-                let paddedEnd = min(samples.count, endIndex + 4800)
+            if rms > 0.0018 {
+                // Keep generous 1.0s (16000 samples) safety tail after the last sound
+                // to guarantee soft consonants, trailing syllables, and reverberation are never clipped
+                let paddedEnd = min(samples.count, endIndex + 16000)
                 return Array(samples[0..<paddedEnd])
             }
             endIndex -= windowSize

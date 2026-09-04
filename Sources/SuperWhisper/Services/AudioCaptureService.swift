@@ -277,6 +277,12 @@ public final class AudioCaptureService: ObservableObject {
         
         self.isRecording = false
         self.isPaused = false
+        
+        // Grace buffer (350ms): keep audio tap running for a third of a second
+        // to flush hardware CoreAudio buffers and capture the natural acoustic tail
+        // of the final spoken word without clipping.
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        
         self.rmsLevel = 0.0
         self.audioLevels = Array(repeating: 0.04, count: 9)
         
