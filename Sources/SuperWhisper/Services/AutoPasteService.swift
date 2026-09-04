@@ -5,11 +5,20 @@ import Carbon
 public final class AutoPasteService {
     public static let shared = AutoPasteService()
     
+    private var lastPasteTimestamp: Date = .distantPast
+    
     private init() {}
     
     @discardableResult
     public func paste(text: String, targetApp: NSRunningApplication?) -> Bool {
         guard !text.isEmpty else { return false }
+        
+        let now = Date()
+        guard now.timeIntervalSince(lastPasteTimestamp) > 0.4 else {
+            print("⚠️ [AutoPasteService] Debounced duplicate paste call within \(now.timeIntervalSince(lastPasteTimestamp))s")
+            return false
+        }
+        lastPasteTimestamp = now
         
         // 1. Set text on system clipboard
         let pasteboard = NSPasteboard.general
@@ -22,7 +31,7 @@ public final class AutoPasteService {
             target.activate(options: .activateIgnoringOtherApps)
         }
         
-        // 3. Post simulated Cmd+V with crisp, short 80ms settling delay
+        // 3. Post simulated Cmd+V with crisp 80ms settling delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
             self.dispatchCmdVKeystroke()
         }
@@ -31,7 +40,7 @@ public final class AutoPasteService {
     }
     
     private func dispatchCmdVKeystroke() {
-        let vKeyCode: CGKeyCode = 0x09 // Virtual keycode for 'V' (layout-independent)
+        let vKeyCode: CGKeyCode = 0x09 // Virtual keycode for 'V'
         let source = CGEventSource(stateID: .combinedSessionState)
         
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
@@ -43,18 +52,15 @@ public final class AutoPasteService {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
         
-        // Post key down to system and session event taps
-        keyDown.post(tap: .cgSessionEventTap)
+        // Post ONLY to .cghidEventTap to prevent duplicate keystroke delivery in Electron / Chromium apps
         keyDown.post(tap: .cghidEventTap)
         
-        // Crisp 20ms hold time
-        usleep(20_000)
+        // 25ms key-down hold time
+        usleep(25_000)
         
-        // Post key up
-        keyUp.post(tap: .cgSessionEventTap)
         keyUp.post(tap: .cghidEventTap)
         
-        print("🚀 [AutoPasteService] Pure Cmd+V keystroke dispatched to active app.")
+        print("✅ [AutoPasteService] Single Cmd+V keystroke dispatched to active app.")
     }
     
     public static func checkAccessibilityPermissions(prompt: Bool = false) -> Bool {
