@@ -42,10 +42,12 @@ private final class AudioEngineController: @unchecked Sendable {
             var rms: Float = 0.0
             vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
             
-            // Logarithmic decibel scaling: maps whisper to loud voice into 0.0...1.0
-            let db = 20.0 * log10(max(rms, 0.00005))
-            let normalized = max(0.0, min(1.0, (db + 44.0) / 32.0))
-            let level = pow(normalized, 1.2)
+            // Logarithmic decibel scaling: calibrated for Mac built-in microphone
+            // Floor at -52 dB (cuts background room noise), span 34 dB (up to -18 dB for normal/loud speech)
+            let db = 20.0 * log10(max(rms, 0.00002))
+            let normalized = max(0.0, min(1.0, (db + 52.0) / 34.0))
+            // Square root expansion gives responsive liftoff on gentle voice without clipping on loud voice
+            let level = sqrt(normalized)
             
             onLevelUpdate(level)
         }
@@ -100,9 +102,9 @@ private final class AudioEngineController: @unchecked Sendable {
             
             var rms: Float = 0.0
             vDSP_rmsqv(channelData[0], 1, &rms, vDSP_Length(frameLength))
-            let db = 20.0 * log10(max(rms, 0.00005))
-            let normalized = max(0.0, min(1.0, (db + 44.0) / 32.0))
-            let level = currentlyPaused ? 0.0 : pow(normalized, 1.2)
+            let db = 20.0 * log10(max(rms, 0.00002))
+            let normalized = max(0.0, min(1.0, (db + 52.0) / 34.0))
+            let level = currentlyPaused ? 0.0 : sqrt(normalized)
             
             onLevelUpdate(level)
         }
@@ -302,10 +304,10 @@ public final class AudioCaptureService: ObservableObject {
     private func updateLevels(level: Float) {
         if level > self.rmsLevel {
             // Responsive attack on speech syllables
-            self.rmsLevel = self.rmsLevel * 0.35 + level * 0.65
+            self.rmsLevel = self.rmsLevel * 0.30 + level * 0.70
         } else {
             // Fluid lingering decay: smooth natural glide down
-            self.rmsLevel = self.rmsLevel * 0.88 + level * 0.12
+            self.rmsLevel = self.rmsLevel * 0.86 + level * 0.14
         }
     }
 }

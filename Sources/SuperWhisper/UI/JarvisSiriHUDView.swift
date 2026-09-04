@@ -47,12 +47,12 @@ public struct JarvisSiriHUDView: View {
     
     // Flat modern electric cyan
     private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
-    // Symmetrical bell curve envelope: creates the natural voice dome in the center
-    private let domeEnvelope: [CGFloat] = [0.22, 0.46, 0.72, 0.92, 1.00, 0.92, 0.72, 0.46, 0.22]
+    // Multi-crested acoustic envelope: strong central dome with lively wing crests on bars 1 & 7
+    private let domeEnvelope: [CGFloat] = [0.38, 0.78, 0.62, 0.92, 1.00, 0.92, 0.62, 0.78, 0.38]
     
     // Alternating contrast multipliers: ensures neighboring bars alternate in height
     // so it never looks like a flat, uniform wall of bars
-    private let alternatingSteps: [CGFloat] = [0.85, 1.15, 0.78, 1.12, 1.00, 1.12, 0.78, 1.15, 0.85]
+    private let alternatingSteps: [CGFloat] = [0.90, 1.15, 0.82, 1.08, 1.00, 1.08, 0.82, 1.15, 0.90]
     
     public init(appState: AppState) {
         self.appState = appState
@@ -153,15 +153,15 @@ public struct JarvisSiriHUDView: View {
                     // 2. Dynamic voice wave:
                     // - Traveling wave moving outward from center
                     // - Secondary vocal texture harmonic
-                    let waveTravel = sin(time * 6.2 - Double(dist) * 1.0)
-                    let waveTexture = cos(time * 9.8 + Double(i) * 1.5)
-                    let dynamicMod = 0.62 + 0.38 * (waveTravel * 0.65 + waveTexture * 0.35)
+                    let waveTravel = sin(time * 5.2 - Double(dist) * 0.95)
+                    let waveTexture = cos(time * 8.5 + Double(i) * 1.4)
+                    let dynamicMod = 0.68 + 0.32 * (waveTravel * 0.70 + waveTexture * 0.30)
                     
                     // 3. Voice height with dome shape and alternating step contrast
-                    let voiceHeight = volume * 20.5 * domeEnvelope[i] * alternatingSteps[i] * CGFloat(dynamicMod)
+                    let voiceHeight = volume * 19.5 * domeEnvelope[i] * alternatingSteps[i] * CGFloat(dynamicMod)
                     
-                    // 4. Final bar height (between 3.8px and 25.0px)
-                    let barHeight = min(25.0, max(CGFloat(idleWave), 3.8 + voiceHeight))
+                    // 4. Final bar height (between 3.8px and 24.5px)
+                    let barHeight = min(24.5, max(CGFloat(idleWave), 3.8 + voiceHeight))
                     
                     RoundedRectangle(cornerRadius: 1.6)
                         .fill(flatCyan)
