@@ -17,11 +17,11 @@ public actor TranscriptionEngine {
         let modelFolder = appSupport.appendingPathComponent("SuperWhisper/Models/\(modelName)")
         
         if fileManager.fileExists(atPath: modelFolder.path) {
-            print("📁 [TranscriptionEngine] Found local model at: \(modelFolder.path)")
+            print("📦 [TranscriptionEngine] Found local model at: \(modelFolder.path)")
             return modelFolder
         }
         
-        print("📥 [TranscriptionEngine] Downloading \(modelName)...")
+        print("📦 [TranscriptionEngine] Downloading \(modelName)...")
         let downloadedFolder = try await WhisperKit.download(variant: modelName)
         return downloadedFolder
     }
@@ -30,7 +30,7 @@ public actor TranscriptionEngine {
         if whisperKit != nil { return }
         
         let modelFolder = try await resolveModelFolder()
-        print("🚀 [TranscriptionEngine] Loading WhisperKit with .cpuAndGPU from \(modelFolder.path)...")
+        print("🧠 [TranscriptionEngine] Loading WhisperKit with .cpuAndGPU from \(modelFolder.path)...")
         
         let compute = ModelComputeOptions(
             melCompute: .cpuAndGPU,
@@ -59,10 +59,6 @@ public actor TranscriptionEngine {
     }
     
     public func transcribe(audioSamples: [Float], language: String? = "ru") async throws -> String {
-        guard let whisperKit else {
-            throw NSError(domain: "SuperWhisper", code: 1, userInfo: [NSLocalizedDescriptionKey: "Движок распознавания не инициализирован"])
-        }
-        
         guard !audioSamples.isEmpty else {
             return ""
         }
@@ -71,8 +67,67 @@ public actor TranscriptionEngine {
         let trimmedSamples = trimTrailingSilence(audioSamples)
         guard !trimmedSamples.isEmpty else { return "" }
         
-        let start = Date()
         let audioDuration = Double(trimmedSamples.count) / 16000.0
+        
+        // Read preferences & network state on MainActor
+        let (mode, isOnline, apiKey, deepInfraModel) = await MainActor.run {
+            (
+                Preferences.shared.transcriptionMode,
+                NetworkMonitor.shared.isConnected,
+                Preferences.shared.deepInfraApiKey,
+                Preferences.shared.deepInfraModel
+            )
+        }
+        
+        let hasValidApiKey = !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let shouldTryCloud = (mode == .cloudOnly) || (mode == .hybrid && isOnline && hasValidApiKey)
+        
+        // Try Cloud Transcription via DeepInfra first if applicable
+        if shouldTryCloud {
+            do {
+                await MainActor.run {
+                    AppState.shared.processingStatusText = "Облако DeepInfra..."
+                }
+                
+                let startCloud = Date()
+                let cloudRaw = try await DeepInfraTranscriptionService.shared.transcribe(
+                    audioSamples: trimmedSamples,
+                    apiKey: apiKey,
+                    model: deepInfraModel,
+                    language: language
+                )
+                let cloudDuration = Date().timeIntervalSince(startCloud)
+                
+                let formatted = TextPunctuationFormatter.format(cloudRaw)
+                print("⚡️ [TranscriptionEngine] Cloud transcribed \(String(format: "%.2f", audioDuration))s speech in \(String(format: "%.2f", cloudDuration))s: \(formatted)")
+                return formatted
+            } catch {
+                print("⚠️ [TranscriptionEngine] Cloud transcription failed: \(error.localizedDescription)")
+                if mode == .cloudOnly {
+                    throw error
+                }
+                print("🔄 [TranscriptionEngine] Seamlessly falling back to local WhisperKit...")
+            }
+        }
+        
+        // Local On-Device Fallback (or Local-Only mode)
+        await MainActor.run {
+            AppState.shared.processingStatusText = "Локальный WhisperKit..."
+        }
+        
+        return try await transcribeLocally(trimmedSamples: trimmedSamples, audioDuration: audioDuration, language: language)
+    }
+    
+    private func transcribeLocally(trimmedSamples: [Float], audioDuration: Double, language: String?) async throws -> String {
+        if whisperKit == nil {
+            try await initialize()
+        }
+        
+        guard let whisperKit else {
+            throw NSError(domain: "SuperWhisper", code: 1, userInfo: [NSLocalizedDescriptionKey: "Локальный движок распознавания не инициализирован"])
+        }
+        
+        let start = Date()
         
         // VAD chunking only for speech over 30s
         let chunking: ChunkingStrategy? = audioDuration > 30.0 ? .vad : nil
@@ -88,8 +143,7 @@ public actor TranscriptionEngine {
         let results = try await whisperKit.transcribe(audioArray: trimmedSamples, decodeOptions: options)
         let duration = Date().timeIntervalSince(start)
         
-        // 2. Filter segments: if Whisper's own VAD determined a segment is silence (>0.75 no-speech probability),
-        // discard only that silent segment without touching any spoken words.
+        // Filter segments: discard segments where Whisper's VAD determined noSpeechProb > 0.75
         var validTextParts: [String] = []
         for res in results {
             if res.segments.isEmpty {
@@ -109,7 +163,7 @@ public actor TranscriptionEngine {
         
         let rawJoined = validTextParts.joined(separator: " ")
         let formatted = TextPunctuationFormatter.format(rawJoined)
-        print("🎙️ [TranscriptionEngine] Transcribed \(String(format: "%.2f", audioDuration))s in \(String(format: "%.2f", duration))s: \(formatted)")
+        print("🎙️ [TranscriptionEngine] Locally transcribed \(String(format: "%.2f", audioDuration))s in \(String(format: "%.2f", duration))s: \(formatted)")
         return formatted
     }
     
@@ -119,7 +173,7 @@ public actor TranscriptionEngine {
         let windowSize = 800 // 50ms at 16kHz
         var endIndex = samples.count
         
-        // Search backwards from end for speech energy (RMS > 0.005)
+        // Search backwards from end for speech energy (RMS > 0.006)
         while endIndex > windowSize {
             let start = endIndex - windowSize
             var sumSquares: Float = 0.0

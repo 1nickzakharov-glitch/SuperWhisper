@@ -45,9 +45,6 @@ public struct JarvisSiriHUDView: View {
     @ObservedObject var appState: AppState
     @State private var isPillHovered = false
     
-    // Smooth 120 FPS continuous bar heights
-    @State private var currentHeights: [CGFloat] = Array(repeating: 4.0, count: 9)
-    
     // Flat modern electric cyan
     private let flatCyan = Color(red: 0.0, green: 0.88, blue: 1.0)
     // Symmetrical centered frequency index mapping: core speech formants in center
@@ -136,7 +133,7 @@ public struct JarvisSiriHUDView: View {
         }
     }
     
-    // MARK: - Symmetrical Centered 120 FPS Liquid Equalizer (Continuous Glide Interpolation)
+    // MARK: - Symmetrical Centered 120 FPS Liquid Equalizer
     private var centeredEqualizerView: some View {
         TimelineView(.animation) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
@@ -147,23 +144,13 @@ public struct JarvisSiriHUDView: View {
                     let targetLevel = CGFloat(appState.audioCapture.audioLevels[bandIdx])
                     let targetHeight = max(4.0, targetLevel * 24.0)
                     
-                    // Smooth per-frame glide interpolation
-                    let current = currentHeights[i]
-                    let glided = current * 0.78 + targetHeight * 0.22
-                    
                     // Subtle organic breathing wave in silence so bars never look dead
                     let idleBreath = 4.0 + sin(time * 2.8 + Double(i) * 0.45) * 1.2
-                    let barHeight = max(idleBreath, glided)
+                    let barHeight = max(idleBreath, targetHeight)
                     
                     RoundedRectangle(cornerRadius: 1.6)
                         .fill(flatCyan)
                         .frame(width: 3.2, height: barHeight)
-                        .onAppear {
-                            currentHeights[i] = barHeight
-                        }
-                        .onChange(of: glided) { _, newVal in
-                            currentHeights[i] = newVal
-                        }
                 }
             }
             .frame(height: 26)
@@ -219,7 +206,7 @@ public struct JarvisSiriHUDView: View {
                     .frame(width: 17, height: 17)
                     .rotationEffect(.degrees(angle))
                 
-                Text("Распознавание...")
+                Text(appState.processingStatusText)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(flatCyan)
             }
@@ -244,7 +231,7 @@ public struct JarvisSiriHUDView: View {
         case .listening:
             return isPillHovered ? 152 : 98
         case .processing:
-            return 148
+            return max(160, CGFloat(appState.processingStatusText.count * 8 + 48))
         case .success:
             return 118
         case .error:

@@ -69,8 +69,8 @@ private final class AudioEngineController: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var hasInstalledTap = false
     private let bufferLock = NSLock()
-    private var capturedBuffers: [AVAudioPCMBuffer] = []
-    private var inputFormat: AVAudioFormat?
+    private var recordedMonoSamples: [Float] = []
+    private var inputSampleRate: Double = 48000.0
     private let fftAnalyzer = FFTAnalyzer()
     
     private let pauseLock = NSLock()
@@ -96,7 +96,7 @@ private final class AudioEngineController: @unchecked Sendable {
         guard format.sampleRate > 0 else {
             throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
-        self.inputFormat = format
+        self.inputSampleRate = format.sampleRate
         let sr = format.sampleRate
         let analyzer = self.fftAnalyzer
         
@@ -124,7 +124,7 @@ private final class AudioEngineController: @unchecked Sendable {
         stop()
         
         bufferLock.lock()
-        capturedBuffers.removeAll(keepingCapacity: true)
+        recordedMonoSamples.removeAll(keepingCapacity: true)
         bufferLock.unlock()
         self.isPaused = false
         
@@ -133,38 +133,43 @@ private final class AudioEngineController: @unchecked Sendable {
         guard format.sampleRate > 0 else {
             throw NSError(domain: "AudioCaptureService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Неверный формат микрофона"])
         }
-        self.inputFormat = format
+        self.inputSampleRate = format.sampleRate
         let sr = format.sampleRate
         let analyzer = self.fftAnalyzer
+        let chCount = Int(format.channelCount)
         
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { @Sendable (buffer, time) in
-            
             let currentlyPaused = self.isPaused
-            
-            if !currentlyPaused {
-                if let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
-                    copy.frameLength = buffer.frameLength
-                    let chCount = Int(buffer.format.channelCount)
-                    for ch in 0..<chCount {
-                        if let src = buffer.floatChannelData?[ch], let dst = copy.floatChannelData?[ch] {
-                            memcpy(dst, src, Int(buffer.frameLength) * MemoryLayout<Float>.size)
-                        }
-                    }
-                    self.bufferLock.lock()
-                    self.capturedBuffers.append(copy)
-                    self.bufferLock.unlock()
-                }
-            }
-            
-            guard let channelData = buffer.floatChannelData?[0] else { return }
             let frameLength = Int(buffer.frameLength)
             if frameLength == 0 { return }
+            guard let channelData = buffer.floatChannelData else { return }
+            
+            if !currentlyPaused {
+                var monoChunk = [Float](repeating: 0.0, count: frameLength)
+                if chCount == 1 {
+                    _ = monoChunk.withUnsafeMutableBufferPointer { dstPtr in
+                        memcpy(dstPtr.baseAddress!, channelData[0], frameLength * MemoryLayout<Float>.size)
+                    }
+                } else {
+                    for i in 0..<frameLength {
+                        var sum: Float = 0.0
+                        for ch in 0..<chCount {
+                            sum += channelData[ch][i]
+                        }
+                        monoChunk[i] = sum / Float(chCount)
+                    }
+                }
+                
+                self.bufferLock.lock()
+                self.recordedMonoSamples.append(contentsOf: monoChunk)
+                self.bufferLock.unlock()
+            }
             
             var rms: Float = 0.0
-            vDSP_rmsqv(channelData, 1, &rms, vDSP_Length(frameLength))
+            vDSP_rmsqv(channelData[0], 1, &rms, vDSP_Length(frameLength))
             let level = currentlyPaused ? 0.02 : min(max(sqrt(rms * 28.0), 0.04), 1.0)
             
-            let rawSamples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
+            let rawSamples = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
             let bandLevels: [Float]
             if currentlyPaused {
                 bandLevels = Array(repeating: 0.04, count: 9)
@@ -192,42 +197,55 @@ private final class AudioEngineController: @unchecked Sendable {
         stop()
         
         bufferLock.lock()
-        let buffers = capturedBuffers
-        capturedBuffers.removeAll(keepingCapacity: true)
+        let rawSamples = recordedMonoSamples
+        recordedMonoSamples.removeAll(keepingCapacity: true)
         bufferLock.unlock()
         
-        guard let sourceFormat = inputFormat, !buffers.isEmpty else { return [] }
-        guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false) else { return [] }
-        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else { return [] }
+        guard !rawSamples.isEmpty else { return [] }
         
+        let sr = self.inputSampleRate
+        if abs(sr - 16000.0) < 1.0 {
+            return rawSamples
+        }
+        
+        guard let sourceFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sr, channels: 1, interleaved: false),
+              let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false),
+              let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+            return rawSamples
+        }
+        
+        let frameCount = AVAudioFrameCount(rawSamples.count)
+        guard let srcBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
+            return rawSamples
+        }
+        srcBuffer.frameLength = frameCount
+        memcpy(srcBuffer.floatChannelData![0], rawSamples, rawSamples.count * MemoryLayout<Float>.size)
+        
+        let targetCapacity = AVAudioFrameCount(Double(frameCount) * (16000.0 / sr) + 1024)
+        guard let dstBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: targetCapacity) else {
+            return rawSamples
+        }
+        
+        var err: NSError?
         final class SupplyState: @unchecked Sendable { var supplied = false }
-        var outputSamples: [Float] = []
+        let state = SupplyState()
         
-        for buf in buffers {
-            let ratio = 16000.0 / sourceFormat.sampleRate
-            let capacity = AVAudioFrameCount(Double(buf.frameLength) * ratio + 512)
-            guard let outBuf = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { continue }
-            
-            var err: NSError?
-            let state = SupplyState()
-            converter.convert(to: outBuf, error: &err) { _, outStatus in
-                if !state.supplied {
-                    state.supplied = true
-                    outStatus.pointee = .haveData
-                    return buf
-                } else {
-                    outStatus.pointee = .noDataNow
-                    return nil
-                }
-            }
-            
-            if err == nil && outBuf.frameLength > 0, let data = outBuf.floatChannelData?[0] {
-                let chunk = Array(UnsafeBufferPointer(start: data, count: Int(outBuf.frameLength)))
-                outputSamples.append(contentsOf: chunk)
+        converter.convert(to: dstBuffer, error: &err) { _, outStatus in
+            if !state.supplied {
+                state.supplied = true
+                outStatus.pointee = .haveData
+                return srcBuffer
+            } else {
+                outStatus.pointee = .noDataNow
+                return nil
             }
         }
         
-        return outputSamples
+        if err == nil && dstBuffer.frameLength > 0, let data = dstBuffer.floatChannelData?[0] {
+            return Array(UnsafeBufferPointer(start: data, count: Int(dstBuffer.frameLength)))
+        }
+        
+        return rawSamples
     }
 }
 
@@ -323,6 +341,22 @@ public final class AudioCaptureService: ObservableObject {
         self.audioLevels = Array(repeating: 0.04, count: 9)
         print("🛑 [AudioCaptureService] Recording stopped. Output \(samples.count) samples (16kHz).")
         return samples
+    }
+    
+    public func stopRecordingAsync() async -> [Float] {
+        guard isRecording else { return [] }
+        
+        self.isRecording = false
+        self.isPaused = false
+        self.rmsLevel = 0.0
+        self.audioLevels = Array(repeating: 0.04, count: 9)
+        
+        let ctrl = self.controller
+        return await Task.detached(priority: .userInitiated) {
+            let samples = ctrl.drainSamplesConvertedTo16k()
+            print("🛑 [AudioCaptureService] Async drain finished: \(samples.count) samples (16kHz).")
+            return samples
+        }.value
     }
     
     public func cancelRecording() {

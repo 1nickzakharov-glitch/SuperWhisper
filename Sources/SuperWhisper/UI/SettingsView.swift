@@ -52,12 +52,14 @@ public enum KeycodeMapper {
 public struct SettingsView: View {
     @ObservedObject var preferences = Preferences.shared
     @ObservedObject var appState = AppState.shared
+    @ObservedObject var networkMonitor = NetworkMonitor.shared
     
     @State private var isRecordingShortcut = false
     @State private var keyMonitor: Any?
     @State private var modelTestResult: String?
     @State private var isTestingModel = false
     @State private var smoothedMicRMS: CGFloat = 0.04
+    @State private var showApiKey = false
     
     let timer = Timer.publish(every: 0.8, on: .main, in: .common).autoconnect()
     
@@ -85,7 +87,7 @@ public struct SettingsView: View {
                     Label("О программе", systemImage: "info.circle")
                 }
         }
-        .frame(width: 560, height: 430)
+        .frame(width: 580, height: 490)
         .padding(16)
         .onReceive(timer) { _ in
             appState.refreshPermissions()
@@ -338,62 +340,148 @@ public struct SettingsView: View {
     
     // MARK: - Model Tab
     private var modelTab: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 16) {
-                Image(systemName: "brain.head.profile")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 44, height: 44)
-                    .foregroundColor(.accentColor)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("OpenAI Whisper Large-v3-Turbo")
-                        .font(.headline)
-                    Text("Модель CoreML с ускорением на видеочипе (GPU/Metal)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 14) {
+                // Network and Engine Status Card
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.accentColor.opacity(0.12))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: networkMonitor.isConnected ? "bolt.horizontal.icloud.fill" : "antenna.radiowaves.left.and.right.slash")
+                            .font(.system(size: 22))
+                            .foregroundColor(networkMonitor.isConnected ? .accentColor : .orange)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Движок транскрипции речи")
+                            .font(.headline)
+                        Text(networkMonitor.isConnected ? "🟢 Интернет активен • Облако DeepInfra доступно" : "🟡 Офлайн режим • Активен локальный WhisperKit")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
                 }
-                Spacer()
-            }
-            .padding()
-            .background(Color.secondary.opacity(0.08))
-            .cornerRadius(12)
-            
-            VStack(spacing: 10) {
-                infoRow(label: "Размер модели:", value: "598 МБ (локально)")
-                infoRow(label: "Аппаратный движок:", value: "Apple Silicon GPU (Metal) + CPU")
-                infoRow(label: "Скорость распознавания:", value: "0.33x (20 сек речи за 6.6 сек)")
-                infoRow(label: "Детектор пауз (VAD):", value: "Voice Activity Detection активен")
-                infoRow(label: "Конфиденциальность:", value: "100% On-Device (без интернета)")
-            }
-            .padding()
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(12)
-            
-            HStack {
-                Button(isTestingModel ? "Тестирование..." : "Проверить инференс модели") {
-                    isTestingModel = true
-                    Task {
-                        let res = await appState.runSampleModelTest()
-                        self.modelTestResult = res
-                        self.isTestingModel = false
+                .padding(12)
+                .background(Color.secondary.opacity(0.08))
+                .cornerRadius(12)
+                
+                // Mode Selector
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Режим обработки:").font(.headline)
+                    
+                    Picker("Режим", selection: $preferences.transcriptionMode) {
+                        ForEach(TranscriptionEngineMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    
+                    Text(preferences.transcriptionMode.shortDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                }
+                .padding(12)
+                .background(Color.secondary.opacity(0.05))
+                .cornerRadius(12)
+                
+                // DeepInfra Settings (shown unless local-only is forced)
+                if preferences.transcriptionMode != .localOnly {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Облачный сервис DeepInfra").font(.headline)
+                            Spacer()
+                            Link("deepinfra.com ↗", destination: URL(string: "https://deepinfra.com")!)
+                                .font(.caption)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("API Ключ DeepInfra:")
+                                .font(.system(size: 12, weight: .medium))
+                            
+                            HStack(spacing: 8) {
+                                if showApiKey {
+                                    TextField("DeepInfra API Key", text: $preferences.deepInfraApiKey)
+                                        .textFieldStyle(.roundedBorder)
+                                } else {
+                                    SecureField("DeepInfra API Key", text: $preferences.deepInfraApiKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                
+                                Button(action: { showApiKey.toggle() }) {
+                                    Image(systemName: showApiKey ? "eye.slash" : "eye")
+                                }
+                                .buttonStyle(.borderless)
+                                .help(showApiKey ? "Скрыть ключ" : "Показать ключ")
+                                
+                                Button("Ключ Storello") {
+                                    preferences.deepInfraApiKey = Preferences.defaultDeepInfraKey
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .help("Восстановить рабочий ключ из Storello")
+                            }
+                        }
+                        
+                        HStack {
+                            Text("Модель:")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Picker("", selection: $preferences.deepInfraModel) {
+                                Text("Whisper Large-v3-Turbo (быстрая)").tag("openai/whisper-large-v3-turbo")
+                                Text("Whisper Large-v3 (макс. точность)").tag("openai/whisper-large-v3")
+                            }
+                            .frame(width: 280)
+                        }
+                        
+                        Text("⚡️ Скорость: 2-4 минуты речи распознаются за ~1.2 секунды!")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                    .padding(12)
+                    .background(Color.secondary.opacity(0.05))
+                    .cornerRadius(12)
+                }
+                
+                // Local Engine Details
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Локальный движок (WhisperKit on Apple Silicon)").font(.headline)
+                    
+                    VStack(spacing: 8) {
+                        infoRow(label: "Модель:", value: "Whisper Large-v3-Turbo (CoreML)")
+                        infoRow(label: "Аппаратный чип:", value: "Apple Silicon GPU (Metal) + CPU")
+                        infoRow(label: "Локальный статус:", value: appState.isEngineReady ? "Готов к автономной работе" : "Инициализация...")
                     }
                 }
-                .buttonStyle(.bordered)
-                .disabled(isTestingModel)
+                .padding(12)
+                .background(Color.secondary.opacity(0.05))
+                .cornerRadius(12)
                 
-                if let result = modelTestResult {
-                    Text(result)
-                        .font(.caption)
-                        .foregroundColor(.green)
+                // Testing Section
+                HStack(spacing: 12) {
+                    Button(isTestingModel ? "Тестирование..." : "Проверить инференс") {
+                        isTestingModel = true
+                        Task {
+                            let res = await appState.runSampleModelTest()
+                            self.modelTestResult = res
+                            self.isTestingModel = false
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isTestingModel)
+                    
+                    if let result = modelTestResult {
+                        Text(result)
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
-            
-            Spacer()
+            .padding(.vertical, 4)
         }
-        .padding()
     }
     
     // MARK: - About Tab

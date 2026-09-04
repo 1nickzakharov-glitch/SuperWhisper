@@ -4,7 +4,8 @@ DerivedData/
 *.xcodeproj
 *.xcworkspace
 .DS_Store
-Models/
+/Models/
+!Sources/SuperWhisper/Models/
 *.bin
 SuperWhisper.app/Contents/MacOS/
 SuperWhisper.app/Contents/_CodeSignature/

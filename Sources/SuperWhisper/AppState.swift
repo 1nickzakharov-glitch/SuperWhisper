@@ -19,6 +19,7 @@ public final class AppState: ObservableObject {
     @Published public var engineStatusMessage: String = "Инициализация Whisper..."
     @Published public var isAccessibilityGranted: Bool = false
     @Published public var isMicPermissionGranted: Bool = true
+    @Published public var processingStatusText: String = "Распознавание..."
     
     public let audioCapture = AudioCaptureService()
     public let transcriptionEngine = TranscriptionEngine()
@@ -129,21 +130,22 @@ public final class AppState: ObservableObject {
     
     public func stopRecordingAndTranscribe() {
         stopDurationTimer()
-        let audioSamples = audioCapture.stopRecording()
-        
-        guard !audioSamples.isEmpty else {
-            self.hudState = .idle
-            self.overlayPanel.hideHUD()
-            return
-        }
+        self.hudState = .processing
+        self.processingStatusText = "Обработка речи..."
         
         if Preferences.shared.soundFeedback {
             NSSound(named: "Blow")?.play()
         }
         
-        self.hudState = .processing
-        
         Task {
+            let audioSamples = await self.audioCapture.stopRecordingAsync()
+            
+            guard !audioSamples.isEmpty else {
+                self.hudState = .idle
+                self.overlayPanel.hideHUD()
+                return
+            }
+            
             do {
                 let preferredLang = Preferences.shared.language == "auto" ? nil : Preferences.shared.language
                 let text = try await self.transcriptionEngine.transcribe(audioSamples: audioSamples, language: preferredLang)
@@ -168,7 +170,7 @@ public final class AppState: ObservableObject {
                     }
                 }
             } catch {
-                self.hudState = .error(message: "Ошибка распознавания: \(error.localizedDescription)")
+                self.hudState = .error(message: "Ошибка: \(error.localizedDescription)")
                 self.scheduleHUDDismissal(after: 3.0)
             }
         }
