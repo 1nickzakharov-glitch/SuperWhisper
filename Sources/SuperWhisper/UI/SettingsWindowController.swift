@@ -26,8 +26,11 @@ public final class SettingsWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
     
-    public func showSettings() {
+    public func showSettings(tab: Int = 0) {
         guard let window = self.window else { return }
+        let settingsView = SettingsView()
+        settingsView.selectedTab = tab
+        window.contentView = NSHostingView(rootView: settingsView)
         NSApp.activate(ignoringOtherApps: true)
         window.center()
         window.makeKeyAndOrderFront(nil)

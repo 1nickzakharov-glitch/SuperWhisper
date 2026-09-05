@@ -29,6 +29,26 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.nickzakharov.superwhisper.settings"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                SettingsWindowController.shared.showSettings()
+            }
+        }
+        
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.nickzakharov.superwhisper.settings.ai"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                SettingsWindowController.shared.showSettings(tab: 2)
+            }
+        }
+        
         // Start background prewarm of WhisperKit model
         appState.startEnginePrewarm()
         

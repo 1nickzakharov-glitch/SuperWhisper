@@ -5,6 +5,27 @@ public enum TextPunctuationFormatter {
         var text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return "" }
         
+        // Filter common Whisper YouTube/subtitles hallucinations on silence/trailing audio
+        let hallucinationPatterns = [
+            "(?i)(продолжение следует\\.{0,3})",
+            "(?i)(субтитры сделал[^.!?]*[.!?,]*)",
+            "(?i)(редактор субтитров[^.!?]*[.!?,]*)",
+            "(?i)(перевод на русский[^.!?]*[.!?,]*)",
+            "(?i)(спасибо за просмотр[^.!?]*[.!?,]*)",
+            "(?i)(подписывайтесь на канал[^.!?]*[.!?,]*)",
+            "(?i)(ставьте лайк[а-я]*[^.!?]*[.!?,]*)",
+            "(?i)(до скорых встреч[^.!?]*[.!?,]*)",
+            "(?i)(до скорой встречи[^.!?]*[.!?,]*)",
+            "(?i)(to be continued\\.{0,3})",
+            "(?i)(thank you for watching[^.!?]*[.!?,]*)",
+            "(?i)(subtitles by[^.!?]*[.!?,]*)"
+        ]
+        for p in hallucinationPatterns {
+            text = regexReplace(text, pattern: p, with: "")
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "" }
+        
         // Remove duplicate spaces
         while text.contains("  ") {
             text = text.replacingOccurrences(of: "  ", with: " ")

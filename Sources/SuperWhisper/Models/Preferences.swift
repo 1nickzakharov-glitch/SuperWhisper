@@ -26,14 +26,49 @@ public enum TranscriptionEngineMode: String, CaseIterable, Identifiable, Sendabl
     }
 }
 
+public enum LocalWhisperModel: String, CaseIterable, Identifiable, Sendable {
+    case largeV3Turbo = "openai_whisper-large-v3-v20240930_626MB"
+    case small = "openai_whisper-small"
+    case base = "openai_whisper-base"
+    case tiny = "openai_whisper-tiny"
+    
+    public var id: String { rawValue }
+    
+    public var displayName: String {
+        switch self {
+        case .largeV3Turbo: return "Large-v3-Turbo (598 МБ — макс. точность)"
+        case .small: return "Small (460 МБ — сбалансированная)"
+        case .base: return "Base (140 МБ — быстрая)"
+        case .tiny: return "Tiny (75 МБ — ультра-лёгкая)"
+        }
+    }
+    
+    public var description: String {
+        switch self {
+        case .largeV3Turbo: return "Лучшая точность распознавания русского языка и сложной пунктуации."
+        case .small: return "Отличный баланс скорости и качества для любых Mac."
+        case .base: return "Быстрое выполнение, минимальное потребление оперативной памяти."
+        case .tiny: return "Мгновенная инициализация, подходит для быстрых команд."
+        }
+    }
+}
+
 @MainActor
 public final class Preferences: ObservableObject {
     public static let shared = Preferences()
     
     private let defaults = UserDefaults.standard
     
-    // Default pre-configured DeepInfra API key from Storello production
-    public static let defaultDeepInfraKey = "ZSaKD67VXNoDUYvKLbx1VlLj3MKgXc2p"
+    // Default fallback from environment if provided; empty for clean public installs
+    public static let defaultDeepInfraKey = ProcessInfo.processInfo.environment["DEEPINFRA_API_KEY"] ?? ""
+    
+    // Local offline Whisper model variant
+    @Published public var localModel: LocalWhisperModel {
+        didSet {
+            defaults.set(localModel.rawValue, forKey: "localModel")
+            NotificationCenter.default.post(name: .localModelDidChange, object: nil)
+        }
+    }
     
     // Transcription mode: hybrid, cloud, or local
     @Published public var transcriptionMode: TranscriptionEngineMode {
@@ -119,6 +154,9 @@ public final class Preferences: ObservableObject {
         self.autoPaste = defaults.object(forKey: "autoPaste") as? Bool ?? true
         self.restoreClipboard = defaults.object(forKey: "restoreClipboard") as? Bool ?? true
         self.soundFeedback = defaults.object(forKey: "soundFeedback") as? Bool ?? true
+        let savedLocalModelRaw = defaults.string(forKey: "localModel") ?? LocalWhisperModel.largeV3Turbo.rawValue
+        self.localModel = LocalWhisperModel(rawValue: savedLocalModelRaw) ?? .largeV3Turbo
+        
         self.hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
         
         let savedModeRaw = defaults.string(forKey: "transcriptionMode") ?? TranscriptionEngineMode.hybrid.rawValue
@@ -145,4 +183,5 @@ public final class Preferences: ObservableObject {
 
 extension Notification.Name {
     public static let hotkeyDidChange = Notification.Name("SuperWhisper.hotkeyDidChange")
+    public static let localModelDidChange = Notification.Name("SuperWhisper.localModelDidChange")
 }

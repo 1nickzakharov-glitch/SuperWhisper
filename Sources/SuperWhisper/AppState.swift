@@ -44,6 +44,19 @@ public final class AppState: ObservableObject {
                 self?.refreshPermissions()
             }
         }
+        
+        NotificationCenter.default.addObserver(
+            forName: .localModelDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.isEngineReady = false
+                self?.engineStatusMessage = "Загрузка модели: \(Preferences.shared.localModel.displayName)..."
+                await self?.transcriptionEngine.resetModel()
+                self?.startEnginePrewarm()
+            }
+        }
     }
     
     public func refreshPermissions() {
@@ -87,30 +100,31 @@ public final class AppState: ObservableObject {
         self.targetApplication = NSWorkspace.shared.frontmostApplication
         print("🎯 [AppState] Target application captured: \(self.targetApplication?.localizedName ?? "Unknown")")
         
+        // 1. Show HUD IMMEDIATELY with zero lag (0ms)
+        self.hudState = .listening(duration: 0.0)
+        self.recordingStartTime = Date()
+        self.accumulatedDuration = 0
+        self.overlayPanel.showHUD()
+        self.startDurationTimer()
+        
         if Preferences.shared.soundFeedback {
             NSSound(named: "Pop")?.play()
         }
         
+        // 2. Start audio capture in parallel
         Task {
             let hasMicPermission = await audioCapture.requestPermission()
             self.isMicPermissionGranted = hasMicPermission
             guard hasMicPermission else {
                 self.hudState = .error(message: "Нет доступа к микрофону")
-                self.overlayPanel.showHUD()
                 self.scheduleHUDDismissal(after: 3.0)
                 return
             }
             
             do {
                 try self.audioCapture.startRecording()
-                self.recordingStartTime = Date()
-                self.accumulatedDuration = 0
-                self.hudState = .listening(duration: 0.0)
-                self.overlayPanel.showHUD()
-                self.startDurationTimer()
             } catch {
                 self.hudState = .error(message: "Ошибка записи: \(error.localizedDescription)")
-                self.overlayPanel.showHUD()
                 self.scheduleHUDDismissal(after: 2.5)
             }
         }

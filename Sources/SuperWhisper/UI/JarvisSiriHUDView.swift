@@ -71,22 +71,31 @@ public struct JarvisSiriHUDView: View {
     // MARK: - Liquid Glass Capsule
     private var liquidGlassCapsule: some View {
         ZStack {
-            // 1. Frosted Liquid Glass Base
+            // 1. Frosted Liquid Glass Base (translucent and adaptive to dark & light backgrounds)
             Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(Color(red: 0.06, green: 0.09, blue: 0.15).opacity(0.68))
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.10, green: 0.14, blue: 0.22).opacity(0.25),
+                                    Color(red: 0.04, green: 0.06, blue: 0.10).opacity(0.40)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 )
-                // Specular Glass Rim (inner top light reflection)
+                // Specular Glass Rim (crisp top light reflection)
                 .overlay(
                     Capsule(style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.42),
-                                    Color.white.opacity(0.12),
-                                    flatCyan.opacity(0.20)
+                                    Color.white.opacity(0.60),
+                                    Color.white.opacity(0.18),
+                                    flatCyan.opacity(0.30)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -94,9 +103,9 @@ public struct JarvisSiriHUDView: View {
                             lineWidth: 1.0
                         )
                 )
-                // Diffused soft floating shadow
-                .shadow(color: Color.black.opacity(0.25), radius: 14, x: 0, y: 7)
-                .shadow(color: flatCyan.opacity(0.10), radius: 6, x: 0, y: 2)
+                // Diffused soft floating shadow (no bottom clipping, elegant on light and dark)
+                .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+                .shadow(color: flatCyan.opacity(0.12), radius: 4, x: 0, y: 1)
             
             // 2. Interactive Content Inside Glass
             Group {

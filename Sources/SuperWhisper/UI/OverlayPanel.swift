@@ -7,7 +7,7 @@ public final class OverlayPanel: NSPanel {
     
     public init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 80),
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 110),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -67,11 +67,11 @@ public final class OverlayPanel: NSPanel {
         guard let screen = targetScreen else { return }
         
         let screenRect = screen.visibleFrame
-        let width: CGFloat = 280
-        let height: CGFloat = 80
+        let width: CGFloat = 340
+        let height: CGFloat = 110
         
         let x = screenRect.origin.x + (screenRect.width - width) / 2.0
-        let y = screenRect.origin.y + 65.0
+        let y = screenRect.origin.y + 55.0
         
         self.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
     }

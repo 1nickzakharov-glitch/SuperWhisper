@@ -5,31 +5,36 @@ import AVFoundation
 public actor TranscriptionEngine {
     private var whisperKit: WhisperKit?
     private var isWarmedUp = false
-    private let modelName: String
+    private var currentModelName: String = ""
     
-    public init(modelName: String = "openai_whisper-large-v3-v20240930_626MB") {
-        self.modelName = modelName
+    public init() {}
+    
+    public func resetModel() {
+        self.whisperKit = nil
+        self.currentModelName = ""
+        self.isWarmedUp = false
     }
     
-    public func resolveModelFolder() async throws -> URL {
+    public func resolveModelFolder(variant: String) async throws -> URL {
         let fileManager = FileManager.default
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let modelFolder = appSupport.appendingPathComponent("SuperWhisper/Models/\(modelName)")
+        let modelFolder = appSupport.appendingPathComponent("SuperWhisper/Models/\(variant)")
         
         if fileManager.fileExists(atPath: modelFolder.path) {
             print("📦 [TranscriptionEngine] Found local model at: \(modelFolder.path)")
             return modelFolder
         }
         
-        print("📦 [TranscriptionEngine] Downloading \(modelName)...")
-        let downloadedFolder = try await WhisperKit.download(variant: modelName)
+        print("📦 [TranscriptionEngine] Downloading \(variant)...")
+        let downloadedFolder = try await WhisperKit.download(variant: variant)
         return downloadedFolder
     }
     
     public func initialize() async throws {
-        if whisperKit != nil { return }
+        let variant = await MainActor.run { Preferences.shared.localModel.rawValue }
+        if whisperKit != nil && currentModelName == variant { return }
         
-        let modelFolder = try await resolveModelFolder()
+        let modelFolder = try await resolveModelFolder(variant: variant)
         print("🧠 [TranscriptionEngine] Loading WhisperKit with .cpuAndGPU from \(modelFolder.path)...")
         
         let compute = ModelComputeOptions(
@@ -50,6 +55,7 @@ public actor TranscriptionEngine {
         
         let wk = try await WhisperKit(config)
         self.whisperKit = wk
+        self.currentModelName = variant
         self.isWarmedUp = true
         print("✅ [TranscriptionEngine] Initialized successfully! Model: \(wk.modelVariant)")
     }

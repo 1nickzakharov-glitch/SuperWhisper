@@ -60,32 +60,37 @@ public struct SettingsView: View {
     @State private var isTestingModel = false
     @State private var smoothedMicRMS: CGFloat = 0.04
     @State private var showApiKey = false
+    @State public var selectedTab: Int = 0
     
     let timer = Timer.publish(every: 0.8, on: .main, in: .common).autoconnect()
     
     public init() {}
     
     public var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             generalTab
                 .tabItem {
                     Label("Основные", systemImage: "gearshape")
                 }
+                .tag(0)
             
             audioTab
                 .tabItem {
                     Label("Микрофон", systemImage: "mic.fill")
                 }
+                .tag(1)
             
             modelTab
                 .tabItem {
                     Label("Нейросеть", systemImage: "cpu")
                 }
+                .tag(2)
             
             aboutTab
                 .tabItem {
                     Label("О программе", systemImage: "info.circle")
                 }
+                .tag(3)
         }
         .frame(width: 580, height: 490)
         .padding(16)
@@ -415,13 +420,17 @@ public struct SettingsView: View {
                                 .buttonStyle(.borderless)
                                 .help(showApiKey ? "Скрыть ключ" : "Показать ключ")
                                 
-                                Button("Ключ Storello") {
-                                    preferences.deepInfraApiKey = Preferences.defaultDeepInfraKey
+                                Button("Очистить") {
+                                    preferences.deepInfraApiKey = ""
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .help("Восстановить рабочий ключ из Storello")
+                                .help("Очистить сохранённый ключ")
                             }
+                            
+                            Text("Ключ можно получить на deepinfra.com (стоимость ~0.02 рубля за минуту). Без ключа или без сети приложение автоматически переключается на бесплатный локальный Whisper.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
                         
                         HStack {
@@ -448,8 +457,26 @@ public struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Локальный движок (WhisperKit on Apple Silicon)").font(.headline)
                     
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Локальная модель:")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Picker("", selection: $preferences.localModel) {
+                                ForEach(LocalWhisperModel.allCases) { m in
+                                    Text(m.displayName).tag(m)
+                                }
+                            }
+                            .frame(width: 320)
+                        }
+                        
+                        Text(preferences.localModel.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                    
                     VStack(spacing: 8) {
-                        infoRow(label: "Модель:", value: "Whisper Large-v3-Turbo (CoreML)")
                         infoRow(label: "Аппаратный чип:", value: "Apple Silicon GPU (Metal) + CPU")
                         infoRow(label: "Локальный статус:", value: appState.isEngineReady ? "Готов к автономной работе" : "Инициализация...")
                     }
