@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-install-single-command">Quick Install</a> •
-  <a href="#-features">Features</a> •
-  <a href="#-cloud-providers--open-ai-compatibility">Cloud Providers</a> •
-  <a href="#-local-on-device-models">Local Models</a> •
-  <a href="#-русская-версия">Русская версия</a>
+  <a href="#quick-install">Quick Install</a> •
+  <a href="#features">Features</a> •
+  <a href="#cloud-providers--openai-compatibility">Cloud Providers</a> •
+  <a href="#local-on-device-models">Local Models</a> •
+  <a href="#русская-версия">Русская версия</a>
 </p>
 
 <p align="center">
@@ -133,7 +133,7 @@ For completely private, offline transcription, choose your preferred CoreML mode
 
 ---
 
-## 🇷🇺 Русская версия
+## Русская версия
 
 **SuperWhisper** — умная персональная диктовка с интерфейсом Liquid Glass и гибридным AI-движком для macOS:
 
