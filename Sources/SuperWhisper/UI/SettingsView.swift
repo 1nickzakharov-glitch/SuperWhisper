@@ -345,9 +345,15 @@ public struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.tr("Speech Transcription Engine", "Движок транскрипции речи"))
                             .font(.headline)
-                        Text(networkMonitor.isConnected ? L10n.tr("🟢 Online • Cloud API active", "🟢 Интернет активен • Облачный API доступен") : L10n.tr("🟡 Offline • Local WhisperKit active", "🟡 Офлайн • Активен локальный WhisperKit"))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(networkMonitor.isConnected ? Color.green : Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text(networkMonitor.isConnected ? L10n.tr("Online • Cloud API active", "Интернет активен • Облачный API доступен") : L10n.tr("Offline • Local WhisperKit active", "Офлайн • Активен локальный WhisperKit"))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     Spacer()
                 }

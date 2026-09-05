@@ -198,9 +198,9 @@ public final class AppState: ObservableObject {
                 testBuffer[i] = sin(Float(i) * 0.05) * 0.1
             }
             _ = try await self.transcriptionEngine.transcribe(audioSamples: testBuffer, language: "ru")
-            return "✅ Модель успешно отвечает на запросы (инференс активен)!"
+            return L10n.tr("Model inference test successful.", "Тест модели успешно пройден.")
         } catch {
-            return "❌ Ошибка теста: \(error.localizedDescription)"
+            return L10n.tr("Test error: \(error.localizedDescription)", "Ошибка теста: \(error.localizedDescription)")
         }
     }
     

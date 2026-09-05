@@ -31,15 +31,40 @@
 
 ---
 
-## ⚡️ Quick Install (Single Command)
+## Quick Install
 
-Install and launch SuperWhisper in **one single command**:
+### Option 1: One-Line Terminal Command (Recommended)
+
+Run in Terminal to build, install to `/Applications`, and launch automatically:
 
 ```bash
-curl -fsSL https://tinyurl.com/superwhisper-mac | bash
+curl -fsSL https://raw.githubusercontent.com/1nickzakharov-glitch/SuperWhisper/main/install.sh | bash
 ```
 
-*Or download the pre-built [SuperWhisper.zip (2.2 MB)](https://github.com/1nickzakharov-glitch/SuperWhisper/releases/latest/download/SuperWhisper.zip) directly.*
+---
+
+### Option 2: Direct Download (No Terminal Required)
+
+Download the pre-compiled, signed macOS application:
+
+<p align="center">
+  <a href="https://github.com/1nickzakharov-glitch/SuperWhisper/releases/latest/download/SuperWhisper.zip">
+    <img src="https://img.shields.io/badge/Download-SuperWhisper.zip%20(2.2%20MB)-2ea44f?style=for-the-badge&logo=apple" alt="Download SuperWhisper.zip" />
+  </a>
+</p>
+
+1. Download and unzip **`SuperWhisper.zip`**.
+2. Drag **`SuperWhisper.app`** into your `/Applications` folder.
+3. Open the app and press `⌥ Space` to dictate!
+
+---
+
+### Option 3: Build from Source
+
+```bash
+git clone https://github.com/1nickzakharov-glitch/SuperWhisper.git
+cd SuperWhisper && ./install.sh
+```
 
 ---
 
@@ -114,9 +139,9 @@ For completely private, offline transcription, choose your preferred CoreML mode
 
 - **Быстрая установка одной командой**:
   ```bash
-  curl -fsSL https://tinyurl.com/superwhisper-mac | bash
+  curl -fsSL https://raw.githubusercontent.com/1nickzakharov-glitch/SuperWhisper/main/install.sh | bash
   ```
-  *Или скачайте готовый архив [SuperWhisper.zip](https://github.com/1nickzakharov-glitch/SuperWhisper/releases/latest/download/SuperWhisper.zip).*
+  *Либо скачайте готовый архив в один клик:* [SuperWhisper.zip (2.2 МБ)](https://github.com/1nickzakharov-glitch/SuperWhisper/releases/latest/download/SuperWhisper.zip).
 - **Гибридный режим**: мгновенное облачное распознавание за 1–2 секунды через DeepInfra, Groq или OpenAI, с автоматическим бесшовным переключением на локальный **WhisperKit** при отсутствии интернета.
 - **Стеклянный оверлей Liquid Glass**: 60 FPS адаптивная капсула с волновым эквалайзером, откликающимся на естественный голос.
 - **Авто-вставка (`Cmd+V`)**: автоматическая вставка надиктованного текста в любое активное окно без лишних кликов.
