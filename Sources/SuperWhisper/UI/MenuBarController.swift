@@ -39,7 +39,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(titleItem)
         
         // Status indicator (short, concise, no emoji)
-        let statusStr = appState.isEngineReady ? "Готов к работе" : "Загрузка модели..."
+        let statusStr = appState.isEngineReady ? L10n.tr("Ready", "Готов к работе") : L10n.tr("Loading engine...", "Загрузка модели...")
         let statusItem = NSMenuItem(title: statusStr, action: nil, keyEquivalent: "")
         statusItem.isEnabled = false
         statusMenu.addItem(statusItem)
@@ -50,11 +50,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let actionTitle: String
         switch appState.hudState {
         case .listening:
-            actionTitle = "Остановить запись"
+            actionTitle = L10n.tr("Stop Dictation", "Остановить запись")
         case .processing:
-            actionTitle = "Распознавание речи..."
+            actionTitle = L10n.tr("Transcribing speech...", "Распознавание речи...")
         default:
-            actionTitle = "Начать диктовку"
+            actionTitle = L10n.tr("Start Dictation", "Начать диктовку")
         }
         
         let toggleItem = NSMenuItem(title: actionTitle, action: #selector(toggleDictation), keyEquivalent: "")
@@ -64,7 +64,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(NSMenuItem.separator())
         
         // Settings
-        let settingsItem = NSMenuItem(title: "Настройки...", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: L10n.tr("Settings...", "Настройки..."), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.keyEquivalentModifierMask = .command
         settingsItem.target = self
         statusMenu.addItem(settingsItem)
@@ -72,7 +72,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(NSMenuItem.separator())
         
         // Quit
-        let quitItem = NSMenuItem(title: "Завершить", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: L10n.tr("Quit SuperWhisper", "Завершить"), action: #selector(quitApp), keyEquivalent: "q")
         quitItem.keyEquivalentModifierMask = .command
         quitItem.target = self
         statusMenu.addItem(quitItem)

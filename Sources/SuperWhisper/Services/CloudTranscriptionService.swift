@@ -1,57 +1,72 @@
 import Foundation
 
-public final class DeepInfraTranscriptionService: Sendable {
-    public static let shared = DeepInfraTranscriptionService()
+public final class CloudTranscriptionService: Sendable {
+    public static let shared = CloudTranscriptionService()
     
     private init() {}
     
     public func transcribe(
         audioSamples: [Float],
+        baseURL: String,
         apiKey: String,
-        model: String = "openai/whisper-large-v3-turbo",
-        language: String? = "ru"
+        model: String,
+        language: String?
     ) async throws -> String {
         let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanKey.isEmpty else {
-            throw NSError(domain: "DeepInfra", code: 401, userInfo: [NSLocalizedDescriptionKey: "DeepInfra API ключ не указан"])
+        let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let endpointString: String
+        if trimmedBase.hasSuffix("/audio/transcriptions") {
+            endpointString = trimmedBase
+        } else if trimmedBase.hasSuffix("/") {
+            endpointString = "\(trimmedBase)audio/transcriptions"
+        } else {
+            endpointString = "\(trimmedBase)/audio/transcriptions"
+        }
+        
+        guard let url = URL(string: endpointString) else {
+            throw NSError(domain: "CloudTranscription", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid API Endpoint URL: \(trimmedBase)"])
         }
         
         let startEncode = Date()
         let wavData = AudioWAVEncoder.encodeToWAV(samples: audioSamples, sampleRate: 16000)
         let encodeDuration = Date().timeIntervalSince(startEncode)
-        print("⚡️ [DeepInfra] Audio encoded to WAV (\(wavData.count) bytes, \(String(format: "%.2f", Double(audioSamples.count)/16000.0))s) in \(String(format: "%.3f", encodeDuration))s")
+        print("⚡️ [CloudTranscription] Audio encoded to WAV (\(wavData.count) bytes, \(String(format: "%.2f", Double(audioSamples.count)/16000.0))s) in \(String(format: "%.3f", encodeDuration))s")
         
-        let url = URL(string: "https://api.deepinfra.com/v1/openai/audio/transcriptions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 25.0
-        request.setValue("Bearer \(cleanKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30.0
+        
+        if !cleanKey.isEmpty {
+            request.setValue("Bearer \(cleanKey)", forHTTPHeaderField: "Authorization")
+        }
         
         let boundary = "Boundary-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         
         var body = Data()
         
-        // 1. model parameter
+        // 1. Model parameter
+        let cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(model)\r\n".data(using: .utf8)!)
+        body.append("\(cleanModel.isEmpty ? "whisper-1" : cleanModel)\r\n".data(using: .utf8)!)
         
-        // 2. language parameter (if specified)
+        // 2. Language parameter (if specified and not auto)
         if let lang = language, !lang.isEmpty, lang != "auto" {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n".data(using: .utf8)!)
             body.append("\(lang)\r\n".data(using: .utf8)!)
         }
         
-        // 3. audio file parameter
+        // 3. Audio file parameter
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(wavData)
         body.append("\r\n".data(using: .utf8)!)
         
-        // 4. close boundary
+        // 4. Close boundary
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         
         let startUpload = Date()
@@ -59,13 +74,13 @@ public final class DeepInfraTranscriptionService: Sendable {
         let uploadDuration = Date().timeIntervalSince(startUpload)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "DeepInfra", code: 0, userInfo: [NSLocalizedDescriptionKey: "Неверный ответ сервера"])
+            throw NSError(domain: "CloudTranscription", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
         }
         
         if httpResponse.statusCode != 200 {
             let errorText = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
-            print("❌ [DeepInfra] HTTP \(httpResponse.statusCode): \(errorText)")
-            throw NSError(domain: "DeepInfra", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Ошибка DeepInfra (\(httpResponse.statusCode)): \(errorText)"])
+            print("❌ [CloudTranscription] HTTP \(httpResponse.statusCode) from \(url.host ?? ""): \(errorText)")
+            throw NSError(domain: "CloudTranscription", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "API Error (\(httpResponse.statusCode)): \(errorText)"])
         }
         
         struct TranscriptionResponse: Decodable {
@@ -74,7 +89,7 @@ public final class DeepInfraTranscriptionService: Sendable {
         
         let decoded = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
         let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        print("✅ [DeepInfra] Cloud transcription finished in \(String(format: "%.2f", uploadDuration))s. Text: \(text)")
+        print("✅ [CloudTranscription] Finished in \(String(format: "%.2f", uploadDuration))s. Text: \(text)")
         return text
     }
 }

@@ -76,30 +76,34 @@ public actor TranscriptionEngine {
         let audioDuration = Double(trimmedSamples.count) / 16000.0
         
         // Read preferences & network state on MainActor
-        let (mode, isOnline, apiKey, deepInfraModel) = await MainActor.run {
+        let (mode, isOnline, baseURL, apiKey, model, provider) = await MainActor.run {
             (
                 Preferences.shared.transcriptionMode,
                 NetworkMonitor.shared.isConnected,
-                Preferences.shared.deepInfraApiKey,
-                Preferences.shared.deepInfraModel
+                Preferences.shared.cloudBaseURL,
+                Preferences.shared.cloudApiKey,
+                Preferences.shared.cloudModel,
+                Preferences.shared.cloudProvider
             )
         }
         
-        let hasValidApiKey = !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasValidApiKey = !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == .custom
         let shouldTryCloud = (mode == .cloudOnly) || (mode == .hybrid && isOnline && hasValidApiKey)
         
-        // Try Cloud Transcription via DeepInfra first if applicable
+        // Try Cloud Transcription first if applicable
         if shouldTryCloud {
             do {
+                let providerTitle = provider.displayName.split(separator: " ").first.map(String.init) ?? "Cloud"
                 await MainActor.run {
-                    AppState.shared.processingStatusText = "Облако DeepInfra..."
+                    AppState.shared.processingStatusText = L10n.tr("Cloud (\(providerTitle))...", "Облако (\(providerTitle))...")
                 }
                 
                 let startCloud = Date()
-                let cloudRaw = try await DeepInfraTranscriptionService.shared.transcribe(
+                let cloudRaw = try await CloudTranscriptionService.shared.transcribe(
                     audioSamples: trimmedSamples,
+                    baseURL: baseURL,
                     apiKey: apiKey,
-                    model: deepInfraModel,
+                    model: model,
                     language: language
                 )
                 let cloudDuration = Date().timeIntervalSince(startCloud)
@@ -118,7 +122,7 @@ public actor TranscriptionEngine {
         
         // Local On-Device Fallback (or Local-Only mode)
         await MainActor.run {
-            AppState.shared.processingStatusText = "Локальный WhisperKit..."
+            AppState.shared.processingStatusText = L10n.tr("Local WhisperKit...", "Локальный WhisperKit...")
         }
         
         return try await transcribeLocally(trimmedSamples: trimmedSamples, audioDuration: audioDuration, language: language)

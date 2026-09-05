@@ -189,7 +189,7 @@ public struct JarvisSiriHUDView: View {
                 icon: "xmark",
                 baseColor: .red.opacity(0.85),
                 activeColor: .red,
-                helpText: "Отменить запись"
+                helpText: L10n.tr("Cancel recording", "Отменить запись")
             ) {
                 appState.cancelCurrentRecording()
             }
@@ -199,7 +199,7 @@ public struct JarvisSiriHUDView: View {
                 icon: appState.audioCapture.isPaused ? "play.fill" : "pause.fill",
                 baseColor: flatCyan.opacity(0.9),
                 activeColor: flatCyan,
-                helpText: appState.audioCapture.isPaused ? "Продолжить" : "Пауза"
+                helpText: appState.audioCapture.isPaused ? L10n.tr("Resume", "Продолжить") : L10n.tr("Pause", "Пауза")
             ) {
                 appState.togglePauseCurrentRecording()
             }
@@ -209,7 +209,7 @@ public struct JarvisSiriHUDView: View {
                 icon: "checkmark",
                 baseColor: .green.opacity(0.85),
                 activeColor: .green,
-                helpText: "Готово (вставить)"
+                helpText: L10n.tr("Done (paste)", "Готово (вставить)")
             ) {
                 appState.stopRecordingAndTranscribe()
             }
@@ -244,7 +244,7 @@ public struct JarvisSiriHUDView: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(flatCyan)
             
-            Text("Вставлено")
+            Text(L10n.tr("Pasted", "Вставлено"))
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(flatCyan)
         }

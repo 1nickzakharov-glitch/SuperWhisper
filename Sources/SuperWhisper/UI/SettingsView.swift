@@ -70,29 +70,29 @@ public struct SettingsView: View {
         TabView(selection: $selectedTab) {
             generalTab
                 .tabItem {
-                    Label("Основные", systemImage: "gearshape")
+                    Label(L10n.tr("General", "Основные"), systemImage: "gearshape")
                 }
                 .tag(0)
             
             audioTab
                 .tabItem {
-                    Label("Микрофон", systemImage: "mic.fill")
+                    Label(L10n.tr("Microphone", "Микрофон"), systemImage: "mic.fill")
                 }
                 .tag(1)
             
             modelTab
                 .tabItem {
-                    Label("Нейросеть", systemImage: "cpu")
+                    Label(L10n.tr("AI Engine", "Нейросеть"), systemImage: "cpu")
                 }
                 .tag(2)
             
             aboutTab
                 .tabItem {
-                    Label("О программе", systemImage: "info.circle")
+                    Label(L10n.tr("About", "О программе"), systemImage: "info.circle")
                 }
                 .tag(3)
         }
-        .frame(width: 580, height: 490)
+        .frame(width: 590, height: 510)
         .padding(16)
         .onReceive(timer) { _ in
             appState.refreshPermissions()
@@ -103,8 +103,16 @@ public struct SettingsView: View {
     private var generalTab: some View {
         Form {
             Section {
+                // UI Language
+                Picker(L10n.tr("Interface Language:", "Язык интерфейса:"), selection: $preferences.appLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+                .pickerStyle(.menu)
+                
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Горячая клавиша для диктовки:")
+                    Text(L10n.tr("Dictation Hotkey:", "Горячая клавиша для диктовки:"))
                         .font(.system(size: 13, weight: .medium))
                     
                     HStack(spacing: 12) {
@@ -112,7 +120,7 @@ public struct SettingsView: View {
                             Image(systemName: "keyboard")
                                 .foregroundColor(.accentColor)
                             
-                            Text(isRecordingShortcut ? "Нажмите комбинацию клавиш..." : preferences.customShortcutDisplay)
+                            Text(isRecordingShortcut ? L10n.tr("Press shortcut keys...", "Нажмите комбинацию клавиш...") : preferences.customShortcutDisplay)
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .foregroundColor(isRecordingShortcut ? .accentColor : .primary)
                         }
@@ -121,7 +129,7 @@ public struct SettingsView: View {
                         .background(Color.secondary.opacity(0.12))
                         .cornerRadius(8)
                         
-                        Button(isRecordingShortcut ? "Отмена" : "Записать комбинацию") {
+                        Button(isRecordingShortcut ? L10n.tr("Cancel", "Отмена") : L10n.tr("Record Shortcut", "Записать комбинацию")) {
                             if isRecordingShortcut {
                                 stopRecordingShortcut()
                             } else {
@@ -132,7 +140,7 @@ public struct SettingsView: View {
                     }
                     
                     HStack(spacing: 8) {
-                        Text("Пресеты:")
+                        Text(L10n.tr("Presets:", "Пресеты:"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -145,36 +153,41 @@ public struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
                 
-                Picker("Язык распознавания:", selection: $preferences.language) {
-                    Text("Русский (RU) — рекомендуется").tag("ru")
+                Picker(L10n.tr("Speech Language:", "Язык распознавания:"), selection: $preferences.language) {
+                    Text(L10n.tr("Auto Detect Language", "Автоопределение языка")).tag("auto")
                     Text("English (EN)").tag("en")
-                    Text("Автоопределение языка").tag("auto")
+                    Text("Русский (RU)").tag("ru")
+                    Text("Español (ES)").tag("es")
+                    Text("Deutsch (DE)").tag("de")
+                    Text("Français (FR)").tag("fr")
+                    Text("中文 (ZH)").tag("zh")
+                    Text("日本語 (JA)").tag("ja")
                 }
                 .pickerStyle(.menu)
             } header: {
-                Text("Управление и запуск").font(.headline)
+                Text(L10n.tr("Input & Trigger", "Управление и запуск")).font(.headline)
             }
             
             Section {
-                Toggle("Автоматически вставлять текст в активное окно (⌘V)", isOn: $preferences.autoPaste)
-                    .help("Если выключено, текст только копируется в буфер обмена")
+                Toggle(L10n.tr("Auto-paste text into active window (⌘V)", "Автоматически вставлять текст в активное окно (⌘V)"), isOn: $preferences.autoPaste)
+                    .help(L10n.tr("When disabled, text is only copied to the clipboard.", "Если выключено, текст только копируется в буфер обмена."))
                 
-                Toggle("Восстанавливать исходный буфер обмена после вставки", isOn: $preferences.restoreClipboard)
-                    .help("Сохраняет ваши скопированные файлы, пароли и код")
+                Toggle(L10n.tr("Restore previous clipboard content after paste", "Восстанавливать исходный буфер обмена после вставки"), isOn: $preferences.restoreClipboard)
+                    .help(L10n.tr("Preserves your copied files, passwords, or code snippets.", "Сохраняет ваши скопированные файлы, пароли и код."))
                 
-                Toggle("Звуковой сигнал при нажатии хоткея", isOn: $preferences.soundFeedback)
+                Toggle(L10n.tr("Sound feedback on hotkey", "Звуковой сигнал при нажатии хоткея"), isOn: $preferences.soundFeedback)
             } header: {
-                Text("Поведение").font(.headline)
+                Text(L10n.tr("Behavior", "Поведение")).font(.headline)
             }
             
             Section {
                 HStack {
-                    Text("Статус готовности к работе:")
+                    Text(L10n.tr("Engine readiness:", "Статус готовности к работе:"))
                     Spacer()
                     if appState.isEngineReady {
                         HStack(spacing: 6) {
                             Circle().fill(Color.green).frame(width: 8, height: 8)
-                            Text("Готов к работе (\(preferences.customShortcutDisplay))")
+                            Text(L10n.tr("Ready (\(preferences.customShortcutDisplay))", "Готов к работе (\(preferences.customShortcutDisplay))"))
                                 .foregroundColor(.primary)
                                 .font(.system(size: 12, weight: .medium))
                         }
@@ -188,88 +201,74 @@ public struct SettingsView: View {
                         }
                     }
                 }
+            } header: {
+                Text(L10n.tr("Status", "Статус")).font(.headline)
             }
         }
         .formStyle(.grouped)
     }
     
-    // MARK: - Audio Tab (Liquid Smooth VU Meter at 120 FPS)
+    // MARK: - Audio Tab
     private var audioTab: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Тест микрофона (говорите для проверки):")
-                            .font(.subheadline)
+                        Image(systemName: "waveform")
+                            .foregroundColor(.accentColor)
+                        Text(L10n.tr("Live input volume:", "Громкость входного сигнала:"))
+                            .font(.system(size: 13, weight: .medium))
                         Spacer()
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(appState.audioCapture.isMonitoring ? Color.green : Color.secondary)
-                                .frame(width: 7, height: 7)
-                            Text(appState.audioCapture.isMonitoring ? "Слушаю" : "Ожидание")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        Text(String(format: "%.0f%%", Double(appState.audioCapture.rmsLevel * 100)))
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary)
                     }
                     
-                    // 120 FPS Smooth VU-meter line
-                    VStack(spacing: 8) {
-                        TimelineView(.animation) { _ in
-                            let target = CGFloat(appState.audioCapture.rmsLevel)
-                            let glided = smoothedMicRMS * 0.80 + target * 0.20
-                            
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.secondary.opacity(0.18))
-                                    
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [.cyan, .blue],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-                                        .frame(width: geo.size.width * min(max(glided * 1.8, 0.04), 1.0))
-                                }
-                            }
-                            .frame(height: 16)
-                            .onAppear { smoothedMicRMS = glided }
-                            .onChange(of: glided) { _, newVal in smoothedMicRMS = newVal }
-                        }
-                        .frame(height: 16)
+                    GeometryReader { geo in
+                        let targetVal = CGFloat(appState.audioCapture.rmsLevel)
+                        let width = max(4.0, targetVal * geo.size.width)
                         
-                        HStack {
-                            Text("Уровень чувствительности: \(Int(smoothedMicRMS * 100))%")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
-                            Spacer()
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.secondary.opacity(0.15))
+                                .frame(height: 12)
+                            
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.cyan, .blue, .purple],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: min(geo.size.width, width), height: 12)
+                                .animation(.easeOut(duration: 0.08), value: targetVal)
                         }
                     }
+                    .frame(height: 14)
                     
-                    Text("Шкала плавно реагирует на громкость голоса без задержек.")
+                    Text(L10n.tr("Speak to test microphone response.", "Шкала плавно реагирует на громкость голоса."))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Индикатор микрофона").font(.headline)
+                Text(L10n.tr("Microphone Meter", "Индикатор микрофона")).font(.headline)
             }
             
             Section {
                 HStack {
-                    Text("Доступ к микрофону:")
+                    Text(L10n.tr("Microphone permission:", "Доступ к микрофону:"))
                     Spacer()
                     let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
                     if micStatus == .authorized {
                         HStack(spacing: 5) {
                             Circle().fill(Color.green).frame(width: 7, height: 7)
-                            Text("Разрешён")
+                            Text(L10n.tr("Granted", "Разрешён"))
                                 .font(.system(size: 12, weight: .medium))
                         }
                     } else {
-                        Button("Запросить доступ") {
+                        Button(L10n.tr("Request Access", "Запросить доступ")) {
                             AVCaptureDevice.requestAccess(for: .audio) { granted in
                                 DispatchQueue.main.async {
                                     if granted {
@@ -286,9 +285,9 @@ public struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Универсальный доступ:")
+                            Text(L10n.tr("Accessibility permission:", "Универсальный доступ:"))
                                 .font(.system(size: 13))
-                            Text("Необходим для авто-вставки текста в активное окно")
+                            Text(L10n.tr("Required for instant Cmd+V auto-pasting into active apps", "Необходим для авто-вставки текста в активное окно"))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -296,11 +295,11 @@ public struct SettingsView: View {
                         if appState.isAccessibilityGranted {
                             HStack(spacing: 5) {
                                 Circle().fill(Color.green).frame(width: 7, height: 7)
-                                Text("Разрешён")
+                                Text(L10n.tr("Granted", "Разрешён"))
                                     .font(.system(size: 12, weight: .medium))
                             }
                         } else {
-                            Button("Открыть Системные настройки") {
+                            Button(L10n.tr("Open System Settings", "Открыть Системные настройки")) {
                                 _ = AutoPasteService.checkAccessibilityPermissions(prompt: true)
                                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                                     NSWorkspace.shared.open(url)
@@ -310,16 +309,9 @@ public struct SettingsView: View {
                             .controlSize(.small)
                         }
                     }
-                    
-                    if !appState.isAccessibilityGranted {
-                        Text("Совет: если тумблер в Настройках уже включен, выключите и включите его снова один раз, чтобы система привязала разрешение к новому сертификату разработчика.")
-                            .font(.system(size: 10))
-                            .foregroundColor(.orange)
-                            .padding(.top, 2)
-                    }
                 }
             } header: {
-                Text("Системные разрешения").font(.headline)
+                Text(L10n.tr("Permissions", "Системные разрешения")).font(.headline)
             }
         }
         .formStyle(.grouped)
@@ -327,14 +319,6 @@ public struct SettingsView: View {
             let status = AVCaptureDevice.authorizationStatus(for: .audio)
             if status == .authorized {
                 appState.audioCapture.startMonitoring()
-            } else if status == .notDetermined {
-                AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    DispatchQueue.main.async {
-                        if granted {
-                            self.appState.audioCapture.startMonitoring()
-                        }
-                    }
-                }
             }
             appState.refreshPermissions()
         }
@@ -347,7 +331,7 @@ public struct SettingsView: View {
     private var modelTab: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 14) {
-                // Network and Engine Status Card
+                // Connection and Status Card
                 HStack(spacing: 14) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
@@ -359,9 +343,9 @@ public struct SettingsView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Движок транскрипции речи")
+                        Text(L10n.tr("Speech Transcription Engine", "Движок транскрипции речи"))
                             .font(.headline)
-                        Text(networkMonitor.isConnected ? "🟢 Интернет активен • Облако DeepInfra доступно" : "🟡 Офлайн режим • Активен локальный WhisperKit")
+                        Text(networkMonitor.isConnected ? L10n.tr("🟢 Online • Cloud API active", "🟢 Интернет активен • Облачный API доступен") : L10n.tr("🟡 Offline • Local WhisperKit active", "🟡 Офлайн • Активен локальный WhisperKit"))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -373,9 +357,9 @@ public struct SettingsView: View {
                 
                 // Mode Selector
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Режим обработки:").font(.headline)
+                    Text(L10n.tr("Processing Mode:", "Режим обработки:")).font(.headline)
                     
-                    Picker("Режим", selection: $preferences.transcriptionMode) {
+                    Picker("Mode", selection: $preferences.transcriptionMode) {
                         ForEach(TranscriptionEngineMode.allCases) { mode in
                             Text(mode.title).tag(mode)
                         }
@@ -391,26 +375,54 @@ public struct SettingsView: View {
                 .background(Color.secondary.opacity(0.05))
                 .cornerRadius(12)
                 
-                // DeepInfra Settings (shown unless local-only is forced)
+                // Cloud Provider Settings
                 if preferences.transcriptionMode != .localOnly {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Облачный сервис DeepInfra").font(.headline)
+                            Text(L10n.tr("Cloud Provider (OpenAI-compatible)", "Облачный сервис (OpenAI-совместимый)")).font(.headline)
                             Spacer()
-                            Link("deepinfra.com ↗", destination: URL(string: "https://deepinfra.com")!)
-                                .font(.caption)
+                            if let web = preferences.cloudProvider.websiteURL {
+                                Link(preferences.cloudProvider.rawValue + " ↗", destination: web)
+                                    .font(.caption)
+                            }
                         }
                         
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("API Ключ DeepInfra:")
+                        // Preset Picker
+                        HStack {
+                            Text(L10n.tr("Provider Preset:", "Пресет провайдера:"))
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Picker("", selection: $preferences.cloudProvider) {
+                                ForEach(CloudProviderPreset.allCases) { preset in
+                                    Text(preset.displayName).tag(preset)
+                                }
+                            }
+                            .frame(width: 330)
+                            .onChange(of: preferences.cloudProvider) { _, newPreset in
+                                preferences.selectProviderPreset(newPreset)
+                            }
+                        }
+                        
+                        // Base URL
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.tr("Base Endpoint URL:", "Базовый URL эндпоинта:"))
+                                .font(.system(size: 12, weight: .medium))
+                            TextField("https://...", text: $preferences.cloudBaseURL)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12, design: .monospaced))
+                        }
+                        
+                        // API Key
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.tr("API Key:", "API Ключ:"))
                                 .font(.system(size: 12, weight: .medium))
                             
                             HStack(spacing: 8) {
                                 if showApiKey {
-                                    TextField("DeepInfra API Key", text: $preferences.deepInfraApiKey)
+                                    TextField(preferences.cloudProvider.keyPlaceholder, text: $preferences.cloudApiKey)
                                         .textFieldStyle(.roundedBorder)
                                 } else {
-                                    SecureField("DeepInfra API Key", text: $preferences.deepInfraApiKey)
+                                    SecureField(preferences.cloudProvider.keyPlaceholder, text: $preferences.cloudApiKey)
                                         .textFieldStyle(.roundedBorder)
                                 }
                                 
@@ -418,48 +430,42 @@ public struct SettingsView: View {
                                     Image(systemName: showApiKey ? "eye.slash" : "eye")
                                 }
                                 .buttonStyle(.borderless)
-                                .help(showApiKey ? "Скрыть ключ" : "Показать ключ")
+                                .help(showApiKey ? L10n.tr("Hide key", "Скрыть ключ") : L10n.tr("Show key", "Показать ключ"))
                                 
-                                Button("Очистить") {
-                                    preferences.deepInfraApiKey = ""
+                                Button(L10n.tr("Clear", "Очистить")) {
+                                    preferences.cloudApiKey = ""
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .help("Очистить сохранённый ключ")
                             }
                             
-                            Text("Ключ можно получить на deepinfra.com (стоимость ~0.02 рубля за минуту). Без ключа или без сети приложение автоматически переключается на бесплатный локальный Whisper.")
+                            Text(L10n.tr("Works with DeepInfra, Groq, OpenAI, or self-hosted vLLM/Whisper servers. Without a key, SuperWhisper works 100% free offline via WhisperKit.", "Работает с DeepInfra, Groq, OpenAI или локальными vLLM серверами. Без ключа приложение работает бесплатно офлайн через WhisperKit."))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                         
+                        // Model Name
                         HStack {
-                            Text("Модель:")
+                            Text(L10n.tr("Model Name:", "Модель:"))
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
-                            Picker("", selection: $preferences.deepInfraModel) {
-                                Text("Whisper Large-v3-Turbo (быстрая)").tag("openai/whisper-large-v3-turbo")
-                                Text("Whisper Large-v3 (макс. точность)").tag("openai/whisper-large-v3")
-                            }
-                            .frame(width: 280)
+                            TextField("Model identifier", text: $preferences.cloudModel)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 330)
                         }
-                        
-                        Text("⚡️ Скорость: 2-4 минуты речи распознаются за ~1.2 секунды!")
-                            .font(.caption)
-                            .foregroundColor(.green)
                     }
                     .padding(12)
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(12)
                 }
                 
-                // Local Engine Details
+                // Local WhisperKit Engine Details
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Локальный движок (WhisperKit on Apple Silicon)").font(.headline)
+                    Text(L10n.tr("Local Engine (WhisperKit on Apple Silicon)", "Локальный движок (WhisperKit on Apple Silicon)")).font(.headline)
                     
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("Локальная модель:")
+                            Text(L10n.tr("Local Model:", "Локальная модель:"))
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
                             Picker("", selection: $preferences.localModel) {
@@ -467,7 +473,7 @@ public struct SettingsView: View {
                                     Text(m.displayName).tag(m)
                                 }
                             }
-                            .frame(width: 320)
+                            .frame(width: 330)
                         }
                         
                         Text(preferences.localModel.description)
@@ -477,8 +483,8 @@ public struct SettingsView: View {
                     .padding(.vertical, 2)
                     
                     VStack(spacing: 8) {
-                        infoRow(label: "Аппаратный чип:", value: "Apple Silicon GPU (Metal) + CPU")
-                        infoRow(label: "Локальный статус:", value: appState.isEngineReady ? "Готов к автономной работе" : "Инициализация...")
+                        infoRow(label: L10n.tr("Hardware Acceleration:", "Аппаратный чип:"), value: "Apple Silicon GPU (Metal) + CPU")
+                        infoRow(label: L10n.tr("Offline Readiness:", "Локальный статус:"), value: appState.isEngineReady ? L10n.tr("Ready for offline use", "Готов к автономной работе") : L10n.tr("Initializing...", "Инициализация..."))
                     }
                 }
                 .padding(12)
@@ -487,7 +493,7 @@ public struct SettingsView: View {
                 
                 // Testing Section
                 HStack(spacing: 12) {
-                    Button(isTestingModel ? "Тестирование..." : "Проверить инференс") {
+                    Button(isTestingModel ? L10n.tr("Testing...", "Тестирование...") : L10n.tr("Test Speech Inference", "Проверить инференс")) {
                         isTestingModel = true
                         Task {
                             let res = await appState.runSampleModelTest()
@@ -539,17 +545,20 @@ public struct SettingsView: View {
             Text("SuperWhisper")
                 .font(.title2.weight(.bold))
             
-            Text("Версия 1.0.0 (Native Apple Silicon)")
+            Text("Version 1.1.0 (Native Apple Silicon)")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-            Text("Персональная умная диктовка с интерфейсом Liquid Glass и локальной нейросетью Whisper Large-v3-Turbo.")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 30)
+            Text(L10n.tr(
+                "Smart voice dictation with Liquid Glass HUD, multi-provider cloud support, and on-device WhisperKit inference.",
+                "Персональная умная диктовка с интерфейсом Liquid Glass, поддержкой любых облачных API и локальным WhisperKit."
+            ))
+            .font(.footnote)
+            .multilineTextAlignment(.center)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 30)
             
-            Button("GitHub репозиторий") {
+            Button("GitHub Repository ↗") {
                 if let url = URL(string: "https://github.com/1nickzakharov-glitch/SuperWhisper") {
                     NSWorkspace.shared.open(url)
                 }
@@ -568,6 +577,17 @@ public struct SettingsView: View {
         RoundedRectangle(cornerRadius: 3)
             .fill(Color.cyan)
             .frame(width: 4, height: height)
+    }
+    
+    private func infoRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+        }
     }
     
     private func presetButton(_ title: String, code: UInt32, mods: UInt32) -> some View {
@@ -617,14 +637,9 @@ public struct SettingsView: View {
                 displayParts.insert("⌥", at: 0)
             }
             
-            let formattedTitle = displayParts.joined(separator: " ")
-            preferences.setCustomShortcut(
-                keyCode: keyCode,
-                modifiers: carbonMods,
-                display: formattedTitle
-            )
-            
-            stopRecordingShortcut()
+            let display = displayParts.joined(separator: " ")
+            self.preferences.setCustomShortcut(keyCode: keyCode, modifiers: carbonMods, display: display)
+            self.stopRecordingShortcut()
             return nil
         }
     }
@@ -634,17 +649,6 @@ public struct SettingsView: View {
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
-        }
-    }
-    
-    private func infoRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
         }
     }
 }
