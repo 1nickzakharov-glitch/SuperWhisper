@@ -36,10 +36,10 @@
 Install and launch SuperWhisper in **one single command**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/1nickzakharov-glitch/SuperWhisper/main/install.sh | bash
+curl -fsSL https://tinyurl.com/superwhisper-mac | bash
 ```
 
-*This automatically compiles the optimized release binary, signs it, installs it to `/Applications/SuperWhisper.app`, and launches it immediately.*
+*Or download the pre-built [SuperWhisper.zip (2.2 MB)](https://github.com/1nickzakharov-glitch/SuperWhisper/releases/latest/download/SuperWhisper.zip) directly.*
 
 ---
 
@@ -114,8 +114,9 @@ For completely private, offline transcription, choose your preferred CoreML mode
 
 - **Быстрая установка одной командой**:
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/1nickzakharov-glitch/SuperWhisper/main/install.sh | bash
+  curl -fsSL https://tinyurl.com/superwhisper-mac | bash
   ```
+  *Или скачайте готовый архив [SuperWhisper.zip](https://github.com/1nickzakharov-glitch/SuperWhisper/releases/latest/download/SuperWhisper.zip).*
 - **Гибридный режим**: мгновенное облачное распознавание за 1–2 секунды через DeepInfra, Groq или OpenAI, с автоматическим бесшовным переключением на локальный **WhisperKit** при отсутствии интернета.
 - **Стеклянный оверлей Liquid Glass**: 60 FPS адаптивная капсула с волновым эквалайзером, откликающимся на естественный голос.
 - **Авто-вставка (`Cmd+V`)**: автоматическая вставка надиктованного текста в любое активное окно без лишних кликов.
