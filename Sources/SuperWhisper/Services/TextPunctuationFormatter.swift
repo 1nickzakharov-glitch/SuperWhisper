@@ -26,6 +26,11 @@ public enum TextPunctuationFormatter {
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return "" }
         
+        // Normalize ellipses and double dots that Whisper often inserts for speech pauses.
+        // Dictation should look like clean prose, not subtitle fragments.
+        text = regexReplace(text, pattern: "…+", with: ".")
+        text = regexReplace(text, pattern: "\\.{2,}", with: ".")
+        
         // Remove duplicate spaces
         while text.contains("  ") {
             text = text.replacingOccurrences(of: "  ", with: " ")

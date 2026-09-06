@@ -142,11 +142,13 @@ public actor TranscriptionEngine {
         // VAD chunking only for speech over 30s
         let chunking: ChunkingStrategy? = audioDuration > 30.0 ? .vad : nil
         
+        let promptTokens = whisperKit.tokenizer?.encode(text: TranscriptionPrompt.literaryRussian)
         let options = DecodingOptions(
             task: .transcribe,
             language: language,
             temperature: 0.0,
             detectLanguage: language == nil,
+            promptTokens: promptTokens,
             chunkingStrategy: chunking
         )
         

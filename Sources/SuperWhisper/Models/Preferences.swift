@@ -13,7 +13,7 @@ public enum CloudProviderPreset: String, CaseIterable, Identifiable, Sendable {
     public var displayName: String {
         switch self {
         case .deepinfra: return "DeepInfra (Ultra-fast & cheap)"
-        case .groq: return "Groq (LPU accelerated, whisper-large-v3-turbo)"
+        case .groq: return "Groq (LPU accelerated, whisper-large-v3)"
         case .openai: return "OpenAI (Official whisper-1)"
         case .custom: return "Custom (OpenAI-compatible / Self-hosted)"
         }
@@ -30,8 +30,8 @@ public enum CloudProviderPreset: String, CaseIterable, Identifiable, Sendable {
     
     public var defaultModel: String {
         switch self {
-        case .deepinfra: return "openai/whisper-large-v3-turbo"
-        case .groq: return "whisper-large-v3-turbo"
+        case .deepinfra: return "openai/whisper-large-v3"
+        case .groq: return "whisper-large-v3"
         case .openai: return "whisper-1"
         case .custom: return "whisper-1"
         }
@@ -256,7 +256,19 @@ public final class Preferences: ObservableObject {
         
         self.cloudBaseURL = defaults.string(forKey: "cloudBaseURL") ?? initialProvider.defaultBaseURL
         self.cloudApiKey = defaults.string(forKey: "cloudApiKey") ?? (defaults.string(forKey: "deepInfraApiKey") ?? Preferences.defaultDeepInfraKey)
-        self.cloudModel = defaults.string(forKey: "cloudModel") ?? (defaults.string(forKey: "deepInfraModel") ?? initialProvider.defaultModel)
+        let savedCloudModel = defaults.string(forKey: "cloudModel") ?? defaults.string(forKey: "deepInfraModel")
+        let resolvedCloudModel: String
+        if initialProvider == .deepinfra && savedCloudModel == "openai/whisper-large-v3-turbo" {
+            resolvedCloudModel = CloudProviderPreset.deepinfra.defaultModel
+            defaults.set(resolvedCloudModel, forKey: "cloudModel")
+            defaults.set(resolvedCloudModel, forKey: "deepInfraModel")
+        } else if initialProvider == .groq && savedCloudModel == "whisper-large-v3-turbo" {
+            resolvedCloudModel = CloudProviderPreset.groq.defaultModel
+            defaults.set(resolvedCloudModel, forKey: "cloudModel")
+        } else {
+            resolvedCloudModel = savedCloudModel ?? initialProvider.defaultModel
+        }
+        self.cloudModel = resolvedCloudModel
         
         // Default hotkey: Option + Space (kVK_Space = 49, optionKey = 2048)
         let savedCode = defaults.object(forKey: "customKeyCode") as? UInt32 ?? UInt32(kVK_Space)

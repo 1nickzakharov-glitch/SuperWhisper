@@ -1,5 +1,9 @@
 import Foundation
 
+public enum TranscriptionPrompt {
+    public static let literaryRussian = "Русская речь писателя. Текст записывается связными законченными предложениями с точками, запятыми и тире. Мысли не обрываются многоточиями, а объединяются по смыслу. Не вставляй многоточия на паузах; используй обычную точку или запятую."
+}
+
 public final class CloudTranscriptionService: Sendable {
     public static let shared = CloudTranscriptionService()
     
@@ -10,7 +14,8 @@ public final class CloudTranscriptionService: Sendable {
         baseURL: String,
         apiKey: String,
         model: String,
-        language: String?
+        language: String?,
+        prompt: String = TranscriptionPrompt.literaryRussian
     ) async throws -> String {
         let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -59,14 +64,22 @@ public final class CloudTranscriptionService: Sendable {
             body.append("\(lang)\r\n".data(using: .utf8)!)
         }
         
-        // 3. Audio file parameter
+        // 3. Style/context prompt: discourage telegraphic fragments and ellipses on pauses.
+        let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanPrompt.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(cleanPrompt)\r\n".data(using: .utf8)!)
+        }
+        
+        // 4. Audio file parameter
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(wavData)
         body.append("\r\n".data(using: .utf8)!)
         
-        // 4. Close boundary
+        // 5. Close boundary
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         
         let startUpload = Date()
