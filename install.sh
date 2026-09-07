@@ -43,8 +43,15 @@ echo "📦 Assembling application bundle..."
 mkdir -p SuperWhisper.app/Contents/MacOS
 cp .build/release/SuperWhisper SuperWhisper.app/Contents/MacOS/SuperWhisper
 
-echo "🔏 Code-signing application..."
-codesign --force --deep --sign - SuperWhisper.app 2>/dev/null || true
+echo "🔑 Code-signing application..."
+SIGN_IDENTITY="Apple Development: 1nickzakharov@gmail.com (5RYN7TFXLB)"
+if security find-identity -v -p codesigning | grep -q "5RYN7TFXLB"; then
+    echo "✅ Signing with Apple Development Certificate ($SIGN_IDENTITY)..."
+    codesign --force --deep --sign "$SIGN_IDENTITY" SuperWhisper.app
+else
+    echo "⚠️ Apple Development certificate not found, using ad-hoc signature..."
+    codesign --force --deep --sign - SuperWhisper.app 2>/dev/null || true
+fi
 
 echo "🚀 Installing to /Applications/SuperWhisper.app..."
 killall SuperWhisper 2>/dev/null || true
@@ -60,10 +67,10 @@ fi
 echo ""
 echo "✅ SuperWhisper successfully installed to /Applications!"
 echo ""
-echo "👉 Launching SuperWhisper..."
+echo "🚀 Launching SuperWhisper..."
 open /Applications/SuperWhisper.app
 
 echo ""
-echo "🎉 Done! Press ⌥ Space (Option + Space) anywhere to dictate."
+echo "✨ Done! Press ⌥ Space (Option + Space) anywhere to dictate."
 echo "⚙️  Click the waveform icon in your macOS menu bar to open settings."
 echo ""
