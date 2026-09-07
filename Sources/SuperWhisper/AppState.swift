@@ -20,6 +20,9 @@ public final class AppState: ObservableObject {
     @Published public var isAccessibilityGranted: Bool = false
     @Published public var isMicPermissionGranted: Bool = true
     @Published public var processingStatusText: String = "Распознавание..."
+    @Published public var isNearTimeLimit: Bool = false
+    
+    public static let maxRecordingDuration: TimeInterval = 15.0 * 60.0 // 15 minutes limit
     
     public let audioCapture = AudioCaptureService()
     public let transcriptionEngine = TranscriptionEngine()
@@ -104,6 +107,7 @@ public final class AppState: ObservableObject {
         self.hudState = .listening(duration: 0.0)
         self.recordingStartTime = Date()
         self.accumulatedDuration = 0
+        self.isNearTimeLimit = false
         self.overlayPanel.showHUD()
         self.startDurationTimer()
         
@@ -143,6 +147,8 @@ public final class AppState: ObservableObject {
     }
     
     public func stopRecordingAndTranscribe() {
+        let duration = Date().timeIntervalSince(self.recordingStartTime ?? Date())
+        self.isNearTimeLimit = false
         stopDurationTimer()
         self.hudState = .processing
         self.processingStatusText = "Обработка речи..."
@@ -160,15 +166,25 @@ public final class AppState: ObservableObject {
                 return
             }
             
+            // 1. Safety backup: save audio to disk and register in local journal immediately!
+            let historyEntry = HistoryService.shared.addEntry(
+                duration: duration,
+                audioSamples: audioSamples
+            )
+            
             do {
                 let preferredLang = Preferences.shared.language == "auto" ? nil : Preferences.shared.language
                 let text = try await self.transcriptionEngine.transcribe(audioSamples: audioSamples, language: preferredLang)
                 
                 if text.isEmpty {
+                    HistoryService.shared.updateEntry(id: historyEntry.id, text: "", status: .failed(reason: "Речь не распознана"))
                     self.hudState = .error(message: "Речь не распознана")
                     self.scheduleHUDDismissal(after: 2.0)
                     return
                 }
+                
+                // 2. Mark history entry completed with full text
+                HistoryService.shared.updateEntry(id: historyEntry.id, text: text, status: .completed)
                 
                 // Show success confirmation on the HUD for 0.4s
                 self.hudState = .success(text: text, autoPasted: true)
@@ -184,8 +200,9 @@ public final class AppState: ObservableObject {
                     }
                 }
             } catch {
+                HistoryService.shared.updateEntry(id: historyEntry.id, text: "", status: .failed(reason: error.localizedDescription))
                 self.hudState = .error(message: "Ошибка: \(error.localizedDescription)")
-                self.scheduleHUDDismissal(after: 3.0)
+                self.scheduleHUDDismissal(after: 3.5)
             }
         }
     }
@@ -211,6 +228,15 @@ public final class AppState: ObservableObject {
                 guard let self = self, let start = self.recordingStartTime else { return }
                 if !self.audioCapture.isPaused {
                     let elapsed = Date().timeIntervalSince(start)
+                    self.isNearTimeLimit = (elapsed >= 14.0 * 60.0)
+                    
+                    // 15-minute max limit: auto-stop and send for transcription
+                    if elapsed >= AppState.maxRecordingDuration {
+                        print("⏰ [AppState] Reached 15-minute limit (\(elapsed)s). Auto-stopping and transcribing...")
+                        self.stopRecordingAndTranscribe()
+                        return
+                    }
+                    
                     if case .listening = self.hudState {
                         self.hudState = .listening(duration: elapsed)
                     }

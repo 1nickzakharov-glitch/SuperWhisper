@@ -151,30 +151,41 @@ public struct JarvisSiriHUDView: View {
         TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let volume = CGFloat(appState.audioCapture.rmsLevel)
+            let barColor = appState.isNearTimeLimit ? Color.red : flatCyan
             
-            HStack(spacing: 3.6) {
-                ForEach(0..<9, id: \.self) { i in
-                    let dist = abs(CGFloat(i) - 4.0)
-                    
-                    // 1. Idle breathing wave: gentle undulating ripple in silence
-                    let idleWave = 3.8 + sin(time * 2.2 + Double(i) * 0.75) * 1.1
-                    
-                    // 2. Dynamic voice wave:
-                    // - Traveling wave moving outward from center
-                    // - Secondary vocal texture harmonic
-                    let waveTravel = sin(time * 5.2 - Double(dist) * 0.95)
-                    let waveTexture = cos(time * 8.5 + Double(i) * 1.4)
-                    let dynamicMod = 0.68 + 0.32 * (waveTravel * 0.70 + waveTexture * 0.30)
-                    
-                    // 3. Voice height with dome shape and alternating step contrast
-                    let voiceHeight = volume * 19.5 * domeEnvelope[i] * alternatingSteps[i] * CGFloat(dynamicMod)
-                    
-                    // 4. Final bar height (between 3.8px and 24.5px)
-                    let barHeight = min(24.5, max(CGFloat(idleWave), 3.8 + voiceHeight))
-                    
-                    RoundedRectangle(cornerRadius: 1.6)
-                        .fill(flatCyan)
-                        .frame(width: 3.2, height: barHeight)
+            HStack(spacing: 4.0) {
+                if appState.isNearTimeLimit, case .listening(let dur) = appState.hudState {
+                    let mins = Int(dur) / 60
+                    let secs = Int(dur) % 60
+                    Text(String(format: "%d:%02d", mins, secs))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.red)
+                }
+                
+                HStack(spacing: 3.6) {
+                    ForEach(0..<9, id: \.self) { i in
+                        let dist = abs(CGFloat(i) - 4.0)
+                        
+                        // 1. Idle breathing wave: gentle undulating ripple in silence
+                        let idleWave = 3.8 + sin(time * 2.2 + Double(i) * 0.75) * 1.1
+                        
+                        // 2. Dynamic voice wave:
+                        // - Traveling wave moving outward from center
+                        // - Secondary vocal texture harmonic
+                        let waveTravel = sin(time * 5.2 - Double(dist) * 0.95)
+                        let waveTexture = cos(time * 8.5 + Double(i) * 1.4)
+                        let dynamicMod = 0.68 + 0.32 * (waveTravel * 0.70 + waveTexture * 0.30)
+                        
+                        // 3. Voice height with dome shape and alternating step contrast
+                        let voiceHeight = volume * 19.5 * domeEnvelope[i] * alternatingSteps[i] * CGFloat(dynamicMod)
+                        
+                        // 4. Final bar height (between 3.8px and 24.5px)
+                        let barHeight = min(24.5, max(CGFloat(idleWave), 3.8 + voiceHeight))
+                        
+                        RoundedRectangle(cornerRadius: 1.6)
+                            .fill(barColor)
+                            .frame(width: 3.2, height: barHeight)
+                    }
                 }
             }
             .frame(height: 26)
@@ -253,7 +264,7 @@ public struct JarvisSiriHUDView: View {
     private var capsuleWidth: CGFloat {
         switch appState.hudState {
         case .listening:
-            return isPillHovered ? 152 : 98
+            return isPillHovered ? 152 : (appState.isNearTimeLimit ? 136 : 98)
         case .processing:
             return max(160, CGFloat(appState.processingStatusText.count * 8 + 48))
         case .success:

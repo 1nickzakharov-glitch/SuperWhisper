@@ -49,6 +49,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.nickzakharov.superwhisper.history"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                HistoryWindowController.shared.showHistory()
+            }
+        }
+        
         // Start background prewarm of WhisperKit model
         appState.startEnginePrewarm()
         

@@ -15,6 +15,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.autosaveName = "SuperWhisperStatusItem"
+        statusItem.behavior = [.removalAllowed]
         
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "SuperWhisper")
@@ -63,6 +65,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         
         statusMenu.addItem(NSMenuItem.separator())
         
+        // History
+        let historyItem = NSMenuItem(title: L10n.tr("History (24h)...", "История диктовок (24ч)..."), action: #selector(openHistory), keyEquivalent: "y")
+        historyItem.keyEquivalentModifierMask = .command
+        historyItem.target = self
+        statusMenu.addItem(historyItem)
+        
         // Settings
         let settingsItem = NSMenuItem(title: L10n.tr("Settings...", "Настройки..."), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.keyEquivalentModifierMask = .command
@@ -80,6 +88,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     
     @objc private func toggleDictation() {
         appState.toggleRecording()
+    }
+    
+    @objc private func openHistory() {
+        HistoryWindowController.shared.showHistory()
     }
     
     @objc private func openSettings() {

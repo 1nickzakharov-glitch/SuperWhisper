@@ -1,7 +1,8 @@
 import Foundation
 
 public enum TranscriptionPrompt {
-    public static let literaryRussian = "Русская речь писателя. Текст записывается связными законченными предложениями с точками, запятыми и тире. Мысли не обрываются многоточиями, а объединяются по смыслу. Не вставляй многоточия на паузах; используй обычную точку или запятую."
+    // Style guide for Whisper: clean positive narrative without negative commands (negative commands leak into output during pauses)
+    public static let literaryRussian = "Грамотная, связная русская речь с естественной расстановкой знаков препинания: точек, запятых и тире в законченных предложениях."
 }
 
 public final class CloudTranscriptionService: Sendable {
@@ -40,7 +41,9 @@ public final class CloudTranscriptionService: Sendable {
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30.0
+        // Generous timeout: 180s minimum, or audio duration * 1.5 for long dictations up to 15-20 min
+        let audioDurationSec = Double(audioSamples.count) / 16000.0
+        request.timeoutInterval = max(180.0, audioDurationSec * 1.5)
         
         if !cleanKey.isEmpty {
             request.setValue("Bearer \(cleanKey)", forHTTPHeaderField: "Authorization")

@@ -8,17 +8,22 @@ public enum TextPunctuationFormatter {
         // Filter common Whisper YouTube/subtitles hallucinations on silence/trailing audio
         let hallucinationPatterns = [
             "(?i)(продолжение следует\\.{0,3})",
-            "(?i)(субтитры сделал[^.!?]*[.!?,]*)",
+            "(?i)(субтитры (создавал|делал|сделал|готовил|подготовил)[^.!?]*[.!?,]*)",
             "(?i)(редактор субтитров[^.!?]*[.!?,]*)",
             "(?i)(перевод на русский[^.!?]*[.!?,]*)",
             "(?i)(спасибо за просмотр[^.!?]*[.!?,]*)",
-            "(?i)(подписывайтесь на канал[^.!?]*[.!?,]*)",
+            "(?i)(не забудьте поставить лайк[^.!?]*[.!?,]*)",
             "(?i)(ставьте лайк[а-я]*[^.!?]*[.!?,]*)",
+            "(?i)(подпи(шитесь|сывайтесь) на канал[^.!?]*[.!?,]*)",
+            "(?i)(оставляйте комментари[ияе][^.!?]*[.!?,]*)",
             "(?i)(до скорых встреч[^.!?]*[.!?,]*)",
             "(?i)(до скорой встречи[^.!?]*[.!?,]*)",
+            "(?i)(зайдите по ссылке в описании[^.!?]*[.!?,]*)",
+            "(?i)(возьми (пакетик|паузу)[^.!?]*[.!?,]*)",
+            "(?i)(не вставляй многоточи[ея][^.!?]*[.!?,]*)",
             "(?i)(to be continued\\.{0,3})",
             "(?i)(thank you for watching[^.!?]*[.!?,]*)",
-            "(?i)(subtitles by[^.!?]*[.!?,]*)"
+            "(?i)(subtitles (by|created)[^.!?]*[.!?,]*)"
         ]
         for p in hallucinationPatterns {
             text = regexReplace(text, pattern: p, with: "")
@@ -27,9 +32,9 @@ public enum TextPunctuationFormatter {
         guard !text.isEmpty else { return "" }
         
         // Normalize ellipses and double dots that Whisper often inserts for speech pauses.
-        // Dictation should look like clean prose, not subtitle fragments.
-        text = regexReplace(text, pattern: "…+", with: ".")
-        text = regexReplace(text, pattern: "\\.{2,}", with: ".")
+        // Instead of hard full stops (which shred sentences), treat pause hesitation as a comma clause.
+        text = regexReplace(text, pattern: "…+", with: ", ")
+        text = regexReplace(text, pattern: "\\.{2,}", with: ", ")
         
         // Remove duplicate spaces
         while text.contains("  ") {
@@ -70,9 +75,6 @@ public enum TextPunctuationFormatter {
         // Conversational pauses: "смотри, а", "знаешь,"
         text = regexReplace(text, pattern: "(?<=[а-яА-ЯёЁa-zA-Z0-9])\\s+(смотри)\\s*,?\\s+(а\\b)", with: ", $1, $2")
         text = regexReplace(text, pattern: "(?<=[а-яА-ЯёЁa-zA-Z0-9])\\s+(знаешь)\\s*,?", with: ", $1,")
-        
-        // Ensure sentence boundary before capitalized words if period is missing (e.g. "стало Причём" -> "стало. Причём")
-        text = regexReplace(text, pattern: "(?<=[а-яёa-z0-9])\\s+([А-ЯЁ][а-яё]+)", with: ". $1")
         
         // Clean spaces before punctuation
         let punctuationToFix = [",", ".", "!", "?", ":", ";"]
